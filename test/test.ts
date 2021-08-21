@@ -1,1 +1,1 @@
-import './test-softly.js';
+import './test-soft-assert.js';
