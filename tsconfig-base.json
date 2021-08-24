@@ -5,11 +5,11 @@
     "declarationMap": true,
     "sourceMap": true,
     "strict": true,
-    "module": "ES2020",
-    "target": "ES2020",
+    "module": "esnext",
+    "target": "esnext",
     "moduleResolution": "node"
   },
   "lib": [
-    "ES2020"
+    "esnext"
   ]
 }
