@@ -1,54 +1,93 @@
 # ducktest
 
-This is ducktest, a JavaScript testing framework built on top of [tape](https://github.com/substack/tape).
+This is ducktest, a somewhat fresh take on testing in JavaScript.
 
-In ducktest, tests are grouper hierarchically. Execution flows through all tests from top to bottom, with common setup and teardown written inline.
+## Defining Tests
+
+Each test in ducktest consists of a single base case along with any number of subcases, nested recursively. We run through the test once for each case. Execution flows from top to bottom each time, entering only the cases needed to reach the one under test.
 
 ```js
-test`make a new duck`(() => {
+testcase('make a new duck', () => {
   const duck = new Duck();
 
-  assert`it quacks like a duck`.equal('quack', duck.talk());
-  
-  test`feed it some seeds`(() => {
-    const response = duck.feed(seeds);
+  assert.equal(duck.talk(), 'Quack.', 'it quacks like a duck');
 
-    assert.equal('yum yum, thank you.', response);
+  subcase('feed it a burger', async () => {
+    const response = await duck.feed(hamburger);
+    
+    assert.equal(response, 'WTF is this?');
   });
 
-  test`feed it a burger`(() => {
-    const response = duck.feed(hamburger);
-    
-    assert.equal('wtf is this?', response);
+  subcase('feed it some seeds', async () => {
+    const response = await duck.feed(seeds);
+
+    assert.equal(response, 'Yum, thank you.');
+
+    subcase('feed it some more seeds', async () => {
+      const response = await duck.feed(seeds);
+
+      assert.equal(response, `That's enough, actually.`);
+    });
   });
 });
 ```
 
-This leans on developers' intuitions of normal control structures and lexical scoping. When reading a test there is no need to bounce around between `beforeAll` and `afterEach` callbacks to look for hidden out-of-order side effects, and variables can generally be assigned to in the same place that they are declared.
+This model leans on developers' existing intuitions about normal control structures and lexical scoping, making tests easier to read *and* to write.
 
-In fact tests in ducktest can be intermixed with normal control structures. This makes concepts like *parametric tests* and *assumptions* trivial to express without the need to learn some framework-specific callback-based DSL. Just write it in normal JavaScript!
+Common setup and teardown can be written inline with subcases, and variables can generally be assigned to in the same place that they are declared. In turn, readers don't need to bounce around between `beforeAll` and `afterEach` callbacks to search for hidden out-of-order side effects and variable assignments.
 
 ```js
-for (Species of birds) {
-  test`make a new ${Species.constructor}`(() => {
-    const bird = new Species();
+testcase('introduce a duck to a pond', async () => {
+  const pond = await pondService.makePond();
+  const duck = new Duck();
 
-    if (bird.talk() === 'quack') {
-      message`assuming it's a duck`;
+  duck.introduceTo(pond);
 
-      test`feed it some seeds`(() => {
-        const response = duck.feed(seeds);
+  assert.equal(duck.location(), pond);
 
-        assert.equal('yum yum, thank you.', response);
-      });
-    }
-    
-    // ...
+  subcase('introduce a crocodile to the pond', () => { ... });
+
+  pondService.destroyPond(pond);
 });
 ```
 
-There are a couple of tricks needed to make this work.
+## Dynamically Defining Test Cases
 
-The most important rule is that for any given execution of a test, at most one subtest is executed. This way subtests nested within the same enclosing test do not interfere with one another. Each is given a fresh run.
+Test logic in ducktest can be intermixed with normal control structures. This makes concepts like *parametric tests* and *assumptions* trivial to express in normal JavaScript.
 
-The second trick is the use of tagged template literals for test descriptions. Each template literal in JavaScript has a unique identity, meaning subtests marked by a template literal can be consistently identified between runs. This allows ducktest to easily see which subtests have already been executed. It would also be feasible to simply assume that the same subtests appear in the same order each time ... but this strategy would be less robust in the presence of `if` statements, loops, and misbehaving tests.
+```js
+testcase('', async () => {
+  ;
+});
+```
+
+## Test Output
+
+The `testcase` and `subcase` functions exported from ducktest stream TAP output to stdout. This makes ducktest compatible with any reporters that support `tape` or `node tap`.
+
+```js
+import {testcase, subcase} from 'ducktest';
+```
+
+It is also possible to ask ducktest for versions of `testcase` and `subcase` which stream output elsewhere.
+
+```js
+import {testRunner} from 'ducktest';
+const {testcase, subcase} = testRunner({ output: stringBuffer });
+```
+
+## Parallelism
+
+Test cases recording to the same output stream are run serially.
+
+## Concurrency
+
+Test cases recording to the same output stream are run serially. This limitation exists because when async subcases are run concurrently it is not always possible to find which parent test they are associated with.
+
+However I see this not as an objective failure, but as a tradeoff, as there are some benefits.
+
+Concurrent tests still need to write to an inherently serial output format. This makes memory utilisation less predictable as results need to be buffered to be serialised properly.
+
+The ducktest API *could* be modified to facilitate concurrency by explicitly passing context down to subcases, but this decreases the signal to noise ratio when reading tests, and all the local renaming and shadowing makes tests brittle to refactoring.
+
+It is worth noting that this limitation could be lifted in node through the use of AsyncLocalStorage, but no equivalent API is available in the browser so maintining support for both platforms simultaneously would introduce a great deal of complexity, for relatively little benefit.
