@@ -1,25 +1,27 @@
-import { test } from 'zora'; // TODO dogfood ducktest!
-import { expect } from 'chai';
+import { testcase, subcase } from '../dist/ducktest.js';
 import { soften } from '../dist/soft-assert.js';
+import { expect } from 'chai';
 
-test('soften chai expect', assert => {
+testcase('soften chai expect', async () => {
     let exception: any;
     const softExpect = soften(expect, e => exception = e);
 
-    assert.test('soft failure of to.be.equal()', assert => {
+    subcase('soft failure of to.be.equal()', () => {
         softExpect(true).to.be.equal(false, 'the truth is what you make it');
-        assert.equals(exception.message, 'the truth is what you make it: expected true to equal false');
+        expect(exception.message).to.equal('the truth is what you make it: expected true to equal false');
         // Truth is objective.
     });
-    assert.test('soft failure of to.be.false', assert => {
+
+    subcase('soft failure of to.be.false', async () => {
         softExpect('love').to.be.false;
-        assert.equals(exception.message, "expected 'love' to be false");
+        expect(exception.message).to.equal("expected 'love' to be false");
         // It's true love.
     });
-    assert.test('soft failure of to.have.property().but.not.to.have.property()', assert => {
+
+    subcase('soft failure of to.have.property().but.not.to.have.property()', () => {
         const children = { seen: { heard: '' } };
         softExpect(children).to.have.property('seen').but.not.to.have.property('heard');
-        assert.equals(exception.message, "expected { heard: '' } to not have property 'heard'");
+        expect(exception.message).to.equal("expected { heard: '' } to not have property 'heard'");
         // Children should be seen and heard.
     });
 });
