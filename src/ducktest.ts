@@ -45,7 +45,7 @@ export function suite(reporter?: Reporter) {
             await spec();
             await stack[0].complete;
         } catch (e) {
-            peek(stack).reporter.fail(e);
+            currentReporter().fail(e);
         }
         peek(stack).subcase = peek(stack).subcases[Symbol.iterator]();
 
@@ -63,7 +63,7 @@ export function suite(reporter?: Reporter) {
             await spec();
             await stack[contextIndex].complete;
         } catch (e) {
-            peek(stack).reporter.fail(e);
+            currentReporter().fail(e);
         }
         contextIndex--;
     }
