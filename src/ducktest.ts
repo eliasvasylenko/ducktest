@@ -51,6 +51,11 @@ export function suite(reporter?: Reporter) {
         peek(stack).subcase = peek(stack).subcases[Symbol.iterator]();
 
         let value;
+        if (!currentReporter().success) {
+            while (!({ value } = (peek(stack)?.subcase?.next() ?? {}))?.done) {
+                currentReporter()?.beginSubtestSerial(value).end('SKIP enclosing case failed')
+            }
+        }
         while (({ value } = (peek(stack)?.subcase?.next() ?? {}))?.done) {
             // run complete
             stack.pop()?.reporter.end();
