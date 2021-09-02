@@ -57,4 +57,23 @@ testcase('make a new suite', async () => {
             'not ok - test'
         ]);
     });
+
+    subcase('run a failing test case with subcases', async () => {
+        await s.testcase('test', () => {
+            s.assertions.softFail(new Error('failure'));
+            s.subcase('failing subcase', () => {
+                s.assertions.softFail(new Error('failure'));
+            });
+            s.subcase('empty subcase', () => { });
+        });
+        reporter.end();
+        assert.deepEqual(output, [
+            '    not ok - failure',
+            '      ---',
+            '      ...',
+            '    ok - failing subcase # SKIP enclosing case failed',
+            '    ok - empty subcase # SKIP enclosing case failed',
+            'not ok - test'
+        ]);
+    });
 });

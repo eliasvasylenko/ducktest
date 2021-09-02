@@ -5,20 +5,19 @@ export interface Reporter {
     diagnostic(message: string): void;
     fail(cause: any): void;
     end(message?: string): void;
+    success: boolean;
 };
 export type Stream = (line: string) => void;
 
 const write = Symbol('write');
 const ended = Symbol('ended');
 const subtests = Symbol('subtests');
-const success = Symbol('success');
 const endChild = Symbol('endChild');
 const end = Symbol('end');
 interface TapReporter extends Reporter {
     [write]: Stream;
     [ended]: boolean;
     [subtests]: number;
-    [success]: boolean;
     [endChild]: (desc: string, success: boolean, message?: string) => void;
     [end]: () => void;
 }
@@ -27,17 +26,17 @@ export function tap(writeLine: Stream): Reporter {
         [write]: writeLine,
         [ended]: false,
         [subtests]: 0,
-        [success]: true,
         [endChild](desc, succ, message) {
             this[subtests]--;
-            this[write](`${succ ? 'ok' : 'not ok'} - ${desc}${message ? ' #' + message : ''}`);
-            this[success] &&= succ;
+            this[write](`${succ ? 'ok' : 'not ok'} - ${desc}${message ? ' # ' + message : ''}`);
+            this.success &&= succ;
         },
         [end]() {
             if (this[ended]) throw new TestError('already ended!');
             if (this[subtests] > 0) throw new TestError('subtests not ended');
             this[ended] = true;
         },
+        success: true,
         beginSubtestSerial(desc: string): Reporter {
             this[subtests]++;
             return tapSubtest(this, desc, '    ');
@@ -48,7 +47,7 @@ export function tap(writeLine: Stream): Reporter {
         },
         diagnostic(message: string) { this[write]('# ' + message); },
         fail(cause: any) {
-            this[success] = false;
+            this.success = false;
             this[write](`not ok${cause?.message ? ' - ' + cause.message : ''}`)
             this[write]('  ---');
             this[write]('  ...');
@@ -69,7 +68,7 @@ function tapSubtest(parent: TapReporter, desc: string, prefix: string): Reporter
         ...tap(writeLine),
         end(message?: string) {
             this[end]();
-            p[endChild](d, this[success], message);
+            p[endChild](d, this.success, message);
         }
     } as TapReporter;
 };
