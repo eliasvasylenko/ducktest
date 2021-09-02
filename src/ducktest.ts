@@ -1,7 +1,8 @@
 export * from './soft-assert.js';
 import { soften as soft } from './soft-assert.js';
-export * from './tap-output.js'; 
+export * from './tap-output.js';
 import { tap, Reporter } from './tap-output.js';
+import { TestError } from './test-error.js';
 
 type Spec = () => Promise<void> | void;
 
@@ -105,11 +106,11 @@ export function suite(reporter?: Reporter) {
 
         subcase(description: string, spec: Spec): Promise<void> {
             if (stack.length === 0) {
-                throw 'should appear inside of test';
+                throw new TestError('should appear inside of test');
             }
 
             if (currentPass.subcasesEncountered.has(description)) {
-                throw 'duplicate subcase name encountered during run! change me to a proper error'; // TODO
+                throw new TestError('duplicate subcase name encountered during run! change me to a proper error');
             } else {
                 currentPass.subcasesEncountered.add(description);
             }
@@ -129,7 +130,7 @@ export function suite(reporter?: Reporter) {
                 return scheduleSubcase(description);
             }
 
-            return Promise.reject('encountered unexpected subcase case'); // TODO
+            return Promise.reject(new TestError('encountered unexpected subcase case'));
         }
     };
 }
