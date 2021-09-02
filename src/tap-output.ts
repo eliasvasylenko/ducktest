@@ -1,3 +1,4 @@
+import { TestError } from "./test-error.js";
 export interface Reporter {
     beginSubtestSerial(desc: string): Reporter;
     beginSubtestConcurrent(desc: string): Reporter;
@@ -33,8 +34,8 @@ export function tap(writeLine: Stream): Reporter {
             this[success] &&= succ;
         },
         [end]() {
-            if (this[ended]) throw 'already ended!'; // TODO
-            if (this[subtests] > 0) throw 'subtests not ended'; // TODO
+            if (this[ended]) throw new TestError('already ended!');
+            if (this[subtests] > 0) throw new TestError('subtests not ended');
             this[ended] = true;
         },
         beginSubtestSerial(desc: string): Reporter {
@@ -45,7 +46,7 @@ export function tap(writeLine: Stream): Reporter {
             this[subtests]++;
             return tapSubtest(this, desc, `  ${desc}|  `);
         },
-        diagnostic(message: string) { this[write]('#' + message); },
+        diagnostic(message: string) { this[write]('# ' + message); },
         fail(cause: any) {
             this[success] = false;
             this[write](`not ok${cause?.message ? ' - ' + cause.message : ''}`)
