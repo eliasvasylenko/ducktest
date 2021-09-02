@@ -1,0 +1,36 @@
+{
+  "name": "@strangeskies/ducktest",
+  "version": "0.0.1",
+  "description": "A JavaScript/TypeScript testing framework",
+  "main": "ducktest",
+  "type": "module",
+  "scripts": {
+    "test": "./node_modules/.bin/tsc --build test && node tmp/test.js",
+    "start": "./node_modules/.bin/tsc --build src && node dist/ducktest.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/StrangeSkies/ducktest.git"
+  },
+  "keywords": [
+    "test",
+    "tap",
+    "sync",
+    "async"
+  ],
+  "author": "Elias N Vasylenko",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/StrangeSkies/ducktest/issues"
+  },
+  "homepage": "https://github.com/StrangeSkies/ducktest#readme",
+  "dependencies": {
+    "zora": "^5.0.0"
+  },
+  "devDependencies": {
+    "chai": "^4.3.4",
+    "@types/chai": "^4.2.21",
+    "@types/node": "^16.6.2",
+    "typescript": "^4.3.5"
+  }
+}
