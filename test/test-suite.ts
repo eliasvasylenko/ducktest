@@ -20,6 +20,7 @@ testcase('make a new suite', async () => {
         });
         reporter.end();
         assert.deepEqual(output, [
+            '# failing test',
             '    not ok - failure',
             '      ---',
             '      ...',
@@ -34,6 +35,7 @@ testcase('make a new suite', async () => {
         });
         reporter.end();
         assert.deepEqual(output, [
+            '# passing test',
             '    ok - subcase one',
             '    ok - subcase two',
             'ok - passing test'
@@ -49,6 +51,8 @@ testcase('make a new suite', async () => {
         });
         reporter.end();
         assert.deepEqual(output, [
+            '# test',
+            '    # failing subcase',
             '        not ok - failure',
             '          ---',
             '          ...',
@@ -68,6 +72,7 @@ testcase('make a new suite', async () => {
         });
         reporter.end();
         assert.deepEqual(output, [
+            '# test',
             '    not ok - failure',
             '      ---',
             '      ...',

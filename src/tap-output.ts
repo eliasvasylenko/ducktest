@@ -1,74 +1,80 @@
 import { TestError } from "./test-error.js";
+
+export enum Ordering {
+    Concurrent,
+    Serial
+}
 export interface Reporter {
-    beginSubtestSerial(desc: string): Reporter;
-    beginSubtestConcurrent(desc: string): Reporter;
+    beginSubtest(desc: string, ordering?: Ordering): Reporter;
     diagnostic(message: string): void;
     fail(cause: any): void;
     end(message?: string): void;
     success: boolean;
 };
 export type Stream = (line: string) => void;
-
-const write = Symbol('write');
-const ended = Symbol('ended');
-const subtests = Symbol('subtests');
-const endChild = Symbol('endChild');
-const end = Symbol('end');
-interface TapReporter extends Reporter {
-    [write]: Stream;
-    [ended]: boolean;
-    [subtests]: number;
-    [endChild]: (desc: string, success: boolean, message?: string) => void;
-    [end]: () => void;
-}
 export function tap(writeLine: Stream): Reporter {
-    return {
-        [write]: writeLine,
-        [ended]: false,
-        [subtests]: 0,
-        [endChild](desc, succ, message) {
-            this[subtests]--;
-            this[write](`${succ ? 'ok' : 'not ok'} - ${desc}${message ? ' # ' + message : ''}`);
-            this.success &&= succ;
-        },
-        [end]() {
-            if (this[ended]) throw new TestError('already ended!');
-            if (this[subtests] > 0) throw new TestError('subtests not ended');
-            this[ended] = true;
-        },
-        success: true,
-        beginSubtestSerial(desc: string): Reporter {
-            this[subtests]++;
-            return tapSubtest(this, desc, '    ');
-        },
-        beginSubtestConcurrent(desc: string): Reporter {
-            this[subtests]++;
-            return tapSubtest(this, desc, `  ${desc}|  `);
-        },
-        diagnostic(message: string) { this[write]('# ' + message); },
-        fail(cause: any) {
-            this.success = false;
-            this[write](`not ok${cause?.message ? ' - ' + cause.message : ''}`)
-            this[write]('  ---');
-            this[write]('  ...');
-        },
-        end(message?: string) {
-            this[end]();
-            if (message != null) this.diagnostic(message);
-        }
-    } as TapReporter;
+    return new TapReporter(writeLine);
 };
 
-function tapSubtest(parent: TapReporter, desc: string, prefix: string): Reporter {
-    const p = parent;
-    const d = desc;
-    const pr = prefix;
-    const writeLine = (line: string) => p[write](pr + line);
-    return {
-        ...tap(writeLine),
-        end(message?: string) {
-            this[end]();
-            p[endChild](d, this.success, message);
+class TapReporter implements Reporter {
+    _write: Stream;
+    _ended = false;
+    _ongoingSubtests = {
+        [Ordering.Concurrent]: 0,
+        [Ordering.Serial]: 0
+    };
+    success = true;
+    constructor(writeLine: Stream) {
+        this._write = writeLine;
+    }
+    beginSubtest(description: string, ordering = Ordering.Serial): Reporter {
+        return new TapSubReporter(this, description, ordering);
+    }
+    diagnostic(message?: string) { this._write('# ' + message); }
+    fail(cause: any) {
+        this.success = false;
+        this._write(`not ok${cause?.message ? ' - ' + cause.message : ''}`)
+        this._write('  ---');
+        this._write('  ...');
+    }
+    end(message?: string) {
+        if (this._ended) throw new TestError('already ended!');
+        if (this._ongoingSubtests[Ordering.Concurrent] + this._ongoingSubtests[Ordering.Serial]) throw new TestError('subtests not ended');
+        this._ended = true;
+        this._endMessage(message);
+    }
+    _endMessage(message?: string) {
+        if (message != null) {
+            this.diagnostic(message);
         }
-    } as TapReporter;
-};
+    }
+}
+
+class TapSubReporter extends TapReporter {
+    #parent: TapReporter;
+    #description: string;
+    #ordering: Ordering;
+    constructor(parent: TapReporter, description: string, ordering: Ordering) {
+        parent._ongoingSubtests[ordering]++;
+
+        const o = ordering;
+        let hasContent = false;
+        const prefix = ordering == Ordering.Concurrent ? `  ${description}|  ` : '    ';
+        const writeLine = (line: string) => {
+            if (o === Ordering.Serial && !hasContent) {
+                hasContent = true;
+                parent.diagnostic(description);
+            }
+            parent._write(prefix + line);
+        };
+        super(writeLine);
+        this.#parent = parent;
+        this.#description = description;
+        this.#ordering = ordering;
+    }
+    _endMessage(message?: string) {
+        this.#parent._ongoingSubtests[this.#ordering as Ordering]--;
+        this.#parent._write(`${this.success ? 'ok' : 'not ok'} - ${this.#description}${message ? ' # ' + message : ''}`);
+        this.#parent.success &&= this.success;
+    }
+}

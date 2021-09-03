@@ -1,7 +1,7 @@
 export * from './soft-assert.js';
 import { soften as soft } from './soft-assert.js';
 export * from './tap-output.js';
-import { tap, Reporter } from './tap-output.js';
+import { tap, Reporter, Ordering } from './tap-output.js';
 import { TestError } from './test-error.js';
 
 type Spec = () => Promise<void> | void;
@@ -20,7 +20,7 @@ function makeContext(description: string, reporter: Reporter): Context {
         subcases: new Set(),
         subcase: [][Symbol.iterator](),
         complete: Promise.resolve(),
-        reporter: reporter.beginSubtestSerial(description)
+        reporter: reporter.beginSubtest(description)
     };
 }
 function peek<T>(array: T[]) { return array[array.length - 1]; }
@@ -53,9 +53,10 @@ export function suite(reporter?: Reporter) {
         let value;
         if (!currentReporter().success) {
             while (!({ value } = (peek(stack)?.subcase?.next() ?? {}))?.done) {
-                currentReporter()?.beginSubtestSerial(value).end('SKIP enclosing case failed')
+                currentReporter()?.beginSubtest(value).end('SKIP enclosing case failed')
             }
         }
+
         while (({ value } = (peek(stack)?.subcase?.next() ?? {}))?.done) {
             // run complete
             stack.pop()?.reporter.end();
