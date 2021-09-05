@@ -1,5 +1,5 @@
-export * from './soft-assert.js';
-import { soften as soft } from './soft-assert.js';
+export * from './assertions.js';
+import { soften as soft } from './assertions.js';
 export * from './tap-output.js';
 import { tap, Reporter, Ordering } from './tap-output.js';
 import { TestError } from './test-error.js';

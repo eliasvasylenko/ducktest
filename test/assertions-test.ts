@@ -1,5 +1,5 @@
 import { testcase, subcase } from '../dist/ducktest.js';
-import { soften } from '../dist/soft-assert.js';
+import { soften } from '../dist/assertions.js';
 import { expect } from 'chai';
 
 testcase('soften chai expect', async () => {
