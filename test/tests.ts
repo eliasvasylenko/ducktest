@@ -1,2 +1,3 @@
-import './test-soft-assert.js';
-import './test-suite.js';
+import './assertions-test.js';
+import './tap-output-test.js';
+import './ducktest-test.js';

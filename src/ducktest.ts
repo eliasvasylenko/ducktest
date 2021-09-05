@@ -1,5 +1,5 @@
-export * from './soft-assert.js';
-import { soften as soft } from './soft-assert.js';
+export * from './assertions.js';
+import { soften, silence } from './assertions.js';
 export * from './tap-output.js';
 import { tap, Reporter, Ordering } from './tap-output.js';
 import { TestError } from './test-error.js';
@@ -87,7 +87,7 @@ export function suite(reporter?: Reporter) {
                 currentReporter().fail(error);
             },
             soften<T extends object>(subject: T): T {
-                return soft(subject, this.softFail)
+                return soften(subject, this.softFail)
             },
             async softly(action: () => Promise<void> | void) {
                 try {
@@ -95,7 +95,8 @@ export function suite(reporter?: Reporter) {
                 } catch (e) {
                     this.softFail(e);
                 }
-            }
+            },
+            silence
         },
 
         testcase(description: string, spec: Spec): Promise<void> {
