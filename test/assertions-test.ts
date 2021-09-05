@@ -1,27 +1,82 @@
 import { testcase, subcase } from '../dist/ducktest.js';
-import { soften } from '../dist/assertions.js';
-import { expect } from 'chai';
+import { soften, silence } from '../dist/assertions.js';
+import { strict as assert } from 'assert';
 
-testcase('soften chai expect', async () => {
-    let exception: any;
-    const softExpect = soften(expect, e => exception = e);
+testcase('using soften', () => {
+    subcase('a softened function call intercepts the error', async () => {
+        let error: any;
+        const f = () => { throw 'error text'; };
+        const soft = soften(f, e => error = e);
 
-    subcase('soft failure of to.be.equal()', () => {
-        softExpect(true).to.be.equal(false, 'the truth is what you make it');
-        expect(exception.message).to.equal('the truth is what you make it: expected true to equal false');
-        // Truth is objective.
+        soft();
+
+        assert.equal(error, 'error text');
     });
 
-    subcase('soft failure of to.be.false', async () => {
-        softExpect('love').to.be.false;
-        expect(exception.message).to.equal("expected 'love' to be false");
-        // It's true love.
+    subcase('a softened property access intercepts the error', async () => {
+        let error: any;
+        const o = { get p() { throw 'error text'; } };
+        const soft = soften(o, e => error = e);
+
+        soft.p;
+
+        assert.equal(error, 'error text');
     });
 
-    subcase('soft failure of to.have.property().but.not.to.have.property()', () => {
-        const children = { seen: { heard: '' } };
-        softExpect(children).to.have.property('seen').but.not.to.have.property('heard');
-        expect(exception.message).to.equal("expected { heard: '' } to not have property 'heard'");
-        // Children should be seen and heard.
+    subcase('a softened function call softens a returned object', async () => {
+        let error: any;
+        const f = () => () => { throw 'error text'; };
+        const soft = soften(f, e => error = e);
+
+        soft()();
+
+        assert.equal(error, 'error text');
+    });
+
+    subcase('a softened property access softens a returned object', async () => {
+        let error: any;
+        const o = { get p() { return () => { throw 'error text'; }; } };
+        const soft = soften(o, e => error = e);
+
+        soft.p();
+
+        assert.equal(error, 'error text');
+    });
+
+    subcase('a softened function call with a softened receiver binds the original receiver to `this`', async () => {
+        let result;
+        const o = { f() { result = this; } };
+        const soft = soften(o, () => assert.fail('no error should be thrown'));
+
+        soft.f();
+
+        assert.equal(result, o);
+    });
+
+    subcase('a softened function call forwards the correct arguments', async () => {
+        const f = (...args: any[]) => args;
+        const soft = soften(f, () => assert.fail('no error should be thrown'));
+
+        const r = soft(1, '2', { three: [] });
+
+        assert.deepEqual([1, '2', { three: [] }], r);
+    });
+
+    subcase('a softened function call returns the correct result', async () => {
+        const f = () => 42;
+        const soft = soften(f, () => assert.fail('no error should be thrown'));
+
+        const r = soft();
+
+        assert.equal(42, r);
+    });
+
+    subcase('a softened property access returns the correct result', async () => {
+        const o = { p: 42 };
+        const soft = soften(o, () => assert.fail('no error should be thrown'));
+
+        const r = soft.p;
+
+        assert.equal(42, r);
     });
 });
