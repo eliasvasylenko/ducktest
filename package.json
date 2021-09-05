@@ -24,9 +24,7 @@
     "url": "https://github.com/StrangeSkies/ducktest/issues"
   },
   "homepage": "https://github.com/StrangeSkies/ducktest#readme",
-  "dependencies": {
-    "zora": "^5.0.0"
-  },
+  "dependencies": {},
   "devDependencies": {
     "chai": "^4.3.4",
     "@types/chai": "^4.2.21",
