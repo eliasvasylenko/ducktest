@@ -1,20 +1,23 @@
 export * from './assertions.js';
 import { soften, silence } from './assertions.js';
 export * from './tap-output.js';
-import { tap, Reporter, Ordering } from './tap-output.js';
+import { tap, Stream, Reporter, Ordering } from './tap-output.js';
 import { TestError } from './test-error.js';
 
 type Spec = () => Promise<void> | void;
+type MakeReporter = (stream: Stream) => Reporter;
 
-interface Context {
-    description: string,
-    subcases: Set<string>,
-    subcase: Iterator<string>,
-    complete: Promise<void>,
-    reporter: Reporter
+function peek<T>(array: T[]) { return array[array.length - 1]; }
+
+interface TestcaseContext {
+    description: string;
+    subcases: Set<string>;
+    subcase: Iterator<string>;
+    complete: Promise<void>;
+    reporter: Reporter;
 };
 
-function makeContext(description: string, reporter: Reporter): Context {
+function makeTestcaseContext(description: string, reporter: Reporter): TestcaseContext {
     return {
         description,
         subcases: new Set(),
@@ -23,68 +26,85 @@ function makeContext(description: string, reporter: Reporter): Context {
         reporter: reporter.beginSubtest(description)
     };
 }
-function peek<T>(array: T[]) { return array[array.length - 1]; }
 
-export function suite(reporter?: Reporter) {
-    const baseReporter = reporter ?? tap(console.log);
-    const currentReporter = () => peek(stack)?.reporter ?? baseReporter;
+interface TestcaseState {
+    currentReporter: Reporter;
+    currentPass: {
+        subcasesEncountered: Set<string>;
+    }
+    stackIndex: number;
+    stack: TestcaseContext[];
+};
 
-    let currentTest: Promise<void> = Promise.resolve();
-    const currentPass = {
-        subcasesEncountered: new Set<string>()
+function makeTestcaseState(baseReporter: Reporter): TestcaseState {
+    const base = baseReporter;
+    return {
+        get currentReporter() { return peek(this.stack)?.reporter ?? base; },
+        currentPass: {
+            subcasesEncountered: new Set<string>()
+        },
+        stackIndex: 0,
+        stack: []
     };
+}
 
-    let contextIndex = 0;
-    const stack: Context[] = [];
-
-    async function nextPass(desc: string, spec: Spec): Promise<string> {
+export const defaultStream = console.log;
+export function suite() {
+    async function nextPass(state: TestcaseState, desc: string, spec: Spec): Promise<string> {
+        const s = state;
         // run begin
-        stack.push(makeContext(desc, currentReporter()));
+        s.stack.push(makeTestcaseContext(desc, s.currentReporter));
 
-        currentPass.subcasesEncountered.clear();
+        s.currentPass.subcasesEncountered.clear();
         try {
             await spec();
-            await stack[0].complete;
+            await s.stack[0].complete;
         } catch (e) {
-            currentReporter().fail(e);
+            s.currentReporter.fail(e);
         }
-        peek(stack).subcase = peek(stack).subcases[Symbol.iterator]();
+        peek(s.stack).subcase = peek(s.stack).subcases[Symbol.iterator]();
 
         let value;
-        if (!currentReporter().success) {
-            while (!({ value } = (peek(stack)?.subcase?.next() ?? {}))?.done) {
-                currentReporter()?.beginSubtest(value).end('SKIP enclosing case failed')
+        if (!s.currentReporter.success) {
+            while (!({ value } = (peek(s.stack)?.subcase?.next() ?? {}))?.done) {
+                s.currentReporter?.beginSubtest(value).end('SKIP enclosing case failed')
             }
         }
 
-        while (({ value } = (peek(stack)?.subcase?.next() ?? {}))?.done) {
+        while (({ value } = (peek(s.stack)?.subcase?.next() ?? {}))?.done) {
             // run complete
-            stack.pop()?.reporter.end();
+            s.stack.pop()?.reporter.end();
         }
         return value;
     }
 
-    async function nextSubcase(spec: Spec) {
-        contextIndex++;
+    async function nextSubcase(state: TestcaseState, spec: Spec) {
+        const s = state;
+        s.stackIndex++;
         try {
             await spec();
-            await stack[contextIndex].complete;
+            await s.stack[s.stackIndex].complete;
         } catch (e) {
-            currentReporter().fail(e);
+            s.currentReporter.fail(e);
         }
-        contextIndex--;
+        s.stackIndex--;
     }
 
-    async function scheduleSubcase(description: string) {
-        stack[contextIndex].subcases.add(description);
+    async function scheduleSubcase(state: TestcaseState, description: string) {
+        const s = state;
+        s.stack[s.stackIndex].subcases.add(description);
     }
 
     async function skipSubcase() { }
 
+    const tests: ((reporter: Reporter) => Promise<void>)[] = [];
+    let testcaseState: TestcaseState | null;
     return {
         assertions: {
             softFail(error: any) {
-                currentReporter().fail(error);
+                if (!testcaseState)
+                    throw ''; // TODO
+                testcaseState.currentReporter.fail(error);
             },
             soften<T extends object>(subject: T): T {
                 return soften(subject, this.softFail)
@@ -99,51 +119,76 @@ export function suite(reporter?: Reporter) {
             silence
         },
 
-        testcase(description: string, spec: Spec): Promise<void> {
-            const previousTest = currentTest;
-
-            const s = spec;
-            let desc = description;
-            return currentTest = previousTest.then(async () => {
-                do {
-                    desc = await nextPass(desc, s);
-                } while (desc);
+        testcase(description: string, spec: Spec): void {
+            tests.push(async reporter => {
+                try {
+                    testcaseState = makeTestcaseState(reporter);
+                    const s = spec;
+                    let desc = description;
+                    do {
+                        desc = await nextPass(testcaseState, desc, s);
+                    } while (desc);
+                } finally {
+                    testcaseState = null;
+                }
             });
         },
 
         subcase(description: string, spec: Spec): Promise<void> {
-            if (stack.length === 0) {
+            if (!testcaseState)
+                throw ''; // TODO
+
+            if (testcaseState.stack.length === 0) {
                 throw new TestError('subcase should appear inside testcase');
             }
 
-            if (currentPass.subcasesEncountered.has(description)) {
+            if (testcaseState.currentPass.subcasesEncountered.has(description)) {
                 throw new TestError('duplicate subcase name encountered during run');
             } else {
-                currentPass.subcasesEncountered.add(description);
+                testcaseState.currentPass.subcasesEncountered.add(description);
             }
 
-            if (stack[contextIndex + 1]?.description === description) {
-                const cc = contextIndex;
-                return stack[cc].complete = nextSubcase(spec);
+            if (testcaseState.stack[testcaseState.stackIndex + 1]?.description === description) {
+                const i = testcaseState.stackIndex;
+                return testcaseState.stack[i].complete = nextSubcase(testcaseState, spec);
             }
 
-            for (let i = 0; i <= contextIndex; i++) {
-                if (stack[i].subcases.has(description)) {
+            for (let i = 0; i <= testcaseState.stackIndex; i++) {
+                if (testcaseState.stack[i].subcases.has(description)) {
                     return skipSubcase();
                 }
             }
 
-            if ((contextIndex + 1) == stack.length) {
-                return scheduleSubcase(description);
+            if ((testcaseState.stackIndex + 1) == testcaseState.stack.length) {
+                return scheduleSubcase(testcaseState, description);
             }
 
             return Promise.reject(new TestError('encountered unexpected subcase'));
+        },
+
+        fixture(description: string, spec: Spec): void {
+            tests.push(() => {
+                return Promise.reject(new TestError('fixtures are not implemented'));
+            });
+        },
+
+        async report(stream: Stream = defaultStream, reporter: MakeReporter = tap): Promise<void> {
+            const r = reporter(stream);
+            for (const test of tests) {
+                await test(r);
+            }
+            r.end();
         }
     };
 }
 
-const defaultSuite = suite();
+const s = suite();
+export const assertions = s.assertions;
+export const testcase = s.testcase.bind(s);
+export const subcase = s.subcase.bind(s);
+export const report = s.report.bind(s);
 
-export const assertions = defaultSuite.assertions;
-export const testcase = defaultSuite.testcase;
-export const subcase = defaultSuite.subcase;
+if (process?.on) {
+    process.on('exit', () => report());
+}
+

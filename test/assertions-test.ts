@@ -1,4 +1,4 @@
-import { testcase, subcase } from '../dist/ducktest.js';
+import { testcase, subcase, tap } from '../dist/ducktest.js';
 import { soften, silence } from '../dist/assertions.js';
 import { strict as assert } from 'assert';
 
