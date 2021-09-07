@@ -1,9 +1,9 @@
 import { strict as assert } from 'assert';
-import { testcase, subcase, assertions, report, tap, suite } from '../dist/ducktest.js';
+import { testcase, subcase, assertions, report, tap, suite, Stream } from '../dist/ducktest.js';
 
 testcase('make a new report', async () => {
     let output: string[] = [];
-    const stream = (line: string) => output.push(line);
+    const stream: Stream = { write(line) { output.push(line); } };
     const s = suite();
 
     subcase('run an empty test', async () => {

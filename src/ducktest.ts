@@ -1,11 +1,10 @@
 export * from './assertions.js';
 import { soften, silence } from './assertions.js';
 export * from './tap-output.js';
-import { tap, Stream, Reporter, Ordering } from './tap-output.js';
+import { tap, Reporter, Report, Stream } from './tap-output.js';
 import { TestError } from './test-error.js';
 
 type Spec = () => Promise<void> | void;
-type MakeReporter = (stream: Stream) => Reporter;
 
 function peek<T>(array: T[]) { return array[array.length - 1]; }
 
@@ -14,21 +13,21 @@ interface TestcaseContext {
     subcases: Set<string>;
     subcase: Iterator<string>;
     complete: Promise<void>;
-    reporter: Reporter;
+    report: Report;
 };
 
-function makeTestcaseContext(description: string, reporter: Reporter): TestcaseContext {
+function makeTestcaseContext(description: string, report: Report): TestcaseContext {
     return {
         description,
         subcases: new Set(),
         subcase: [][Symbol.iterator](),
         complete: Promise.resolve(),
-        reporter: reporter.beginSubtest(description)
+        report: report.beginSubtest(description)
     };
 }
 
 interface TestcaseState {
-    currentReporter: Reporter;
+    currentReport: Report;
     currentPass: {
         subcasesEncountered: Set<string>;
     }
@@ -36,10 +35,10 @@ interface TestcaseState {
     stack: TestcaseContext[];
 };
 
-function makeTestcaseState(baseReporter: Reporter): TestcaseState {
-    const base = baseReporter;
+function makeTestcaseState(baseReport: Report): TestcaseState {
+    const base = baseReport;
     return {
-        get currentReporter() { return peek(this.stack)?.reporter ?? base; },
+        get currentReport() { return peek(this.stack)?.report ?? base; },
         currentPass: {
             subcasesEncountered: new Set<string>()
         },
@@ -48,32 +47,44 @@ function makeTestcaseState(baseReporter: Reporter): TestcaseState {
     };
 }
 
-export const defaultStream = console.log;
+export const defaultStream: Stream = {
+    write: () => { },
+    open() {
+        this.write = console.log;
+        console.log = line => {
+            this.write('# ' + line);
+        };
+    },
+    close() {
+        console.log = this.write;
+    }
+};
+export const defaultReporter: Reporter = tap;
 export function suite() {
     async function nextPass(state: TestcaseState, desc: string, spec: Spec): Promise<string> {
         const s = state;
         // run begin
-        s.stack.push(makeTestcaseContext(desc, s.currentReporter));
+        s.stack.push(makeTestcaseContext(desc, s.currentReport));
 
         s.currentPass.subcasesEncountered.clear();
         try {
             await spec();
             await s.stack[0].complete;
         } catch (e) {
-            s.currentReporter.fail(e);
+            s.currentReport.fail(e);
         }
         peek(s.stack).subcase = peek(s.stack).subcases[Symbol.iterator]();
 
         let value;
-        if (!s.currentReporter.success) {
+        if (!s.currentReport.success) {
             while (!({ value } = (peek(s.stack)?.subcase?.next() ?? {}))?.done) {
-                s.currentReporter?.beginSubtest(value).end('SKIP enclosing case failed')
+                s.currentReport?.beginSubtest(value).end('SKIP enclosing case failed')
             }
         }
 
         while (({ value } = (peek(s.stack)?.subcase?.next() ?? {}))?.done) {
             // run complete
-            s.stack.pop()?.reporter.end();
+            s.stack.pop()?.report.end();
         }
         return value;
     }
@@ -85,7 +96,7 @@ export function suite() {
             await spec();
             await s.stack[s.stackIndex].complete;
         } catch (e) {
-            s.currentReporter.fail(e);
+            s.currentReport.fail(e);
         }
         s.stackIndex--;
     }
@@ -97,14 +108,14 @@ export function suite() {
 
     async function skipSubcase() { }
 
-    const tests: ((reporter: Reporter) => Promise<void>)[] = [];
+    const tests: ((report: Report) => Promise<void>)[] = [];
     let testcaseState: TestcaseState | null;
     return {
         assertions: {
             softFail(error: any) {
                 if (!testcaseState)
                     throw ''; // TODO
-                testcaseState.currentReporter.fail(error);
+                testcaseState.currentReport.fail(error);
             },
             soften<T extends object>(subject: T): T {
                 return soften(subject, this.softFail)
@@ -120,9 +131,9 @@ export function suite() {
         },
 
         testcase(description: string, spec: Spec): void {
-            tests.push(async reporter => {
+            tests.push(async report => {
                 try {
-                    testcaseState = makeTestcaseState(reporter);
+                    testcaseState = makeTestcaseState(report);
                     const s = spec;
                     let desc = description;
                     do {
@@ -172,7 +183,7 @@ export function suite() {
             });
         },
 
-        async report(stream: Stream = defaultStream, reporter: MakeReporter = tap): Promise<void> {
+        async report(stream: Stream = defaultStream, reporter: Reporter = defaultReporter): Promise<void> {
             const r = reporter(stream);
             for (const test of tests) {
                 await test(r);
@@ -180,7 +191,7 @@ export function suite() {
             r.end();
         }
     };
-}
+};
 
 const s = suite();
 export const assertions = s.assertions;
@@ -189,6 +200,6 @@ export const subcase = s.subcase.bind(s);
 export const report = s.report.bind(s);
 
 if (process?.on) {
-    process.on('exit', () => report());
+    process?.on('exit', () => report());
 }
 
