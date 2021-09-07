@@ -1,14 +1,14 @@
 import { strict as assert } from 'assert';
-import { testcase, subcase, assertions, suite, tap } from '../dist/ducktest.js';
+import { testcase, subcase, assertions, report, tap, suite } from '../dist/ducktest.js';
 
-testcase('make a new suite', async () => {
+testcase('make a new report', async () => {
     let output: string[] = [];
-    const reporter = tap(line => output.push(line));
-    const s = suite(reporter);
+    const stream = (line: string) => output.push(line);
+    const s = suite();
 
     subcase('run an empty test', async () => {
         await s.testcase('empty test', () => { });
-        reporter.end();
+        await s.report(stream);
         assert.deepEqual(output, [
             'ok - empty test'
         ]);
@@ -18,7 +18,7 @@ testcase('make a new suite', async () => {
         await s.testcase('failing test', () => {
             s.assertions.softFail(new Error('failure'));
         });
-        reporter.end();
+        await s.report(stream);
         assert.deepEqual(output, [
             '# failing test',
             '    not ok - failure',
@@ -33,7 +33,7 @@ testcase('make a new suite', async () => {
             s.subcase('subcase one', () => { });
             s.subcase('subcase two', () => { });
         });
-        reporter.end();
+        await s.report(stream);
         assert.deepEqual(output, [
             '# passing test',
             '    ok - subcase one',
@@ -49,7 +49,7 @@ testcase('make a new suite', async () => {
             });
             s.subcase('empty subcase', () => { });
         });
-        reporter.end();
+        await s.report(stream);
         assert.deepEqual(output, [
             '# test',
             '    # failing subcase',
@@ -70,7 +70,7 @@ testcase('make a new suite', async () => {
             });
             s.subcase('empty subcase', () => { });
         });
-        reporter.end();
+        await s.report(stream);
         assert.deepEqual(output, [
             '# test',
             '    not ok - failure',
