@@ -6,7 +6,7 @@ const assert: typeof strict = assertions.silence(strict);
 
 testcase('start a report', async () => {
     let output: string[] = [];
-    const report = tap(line => output.push(line));
+    const report = tap({ write(line) { output.push(line); } });
 
     subcase('end the report', () => {
         report.end();
