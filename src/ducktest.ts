@@ -1,4 +1,5 @@
 export * from './assertions.js';
+import { fail } from 'assert/strict';
 import { soften, silence } from './assertions.js';
 export { Ordering, Reporter, Report, Stream, tap } from './tap-output.js';
 import { Ordering, Reporter, Report, Stream, tap } from './tap-output.js';
@@ -8,6 +9,20 @@ type Spec = () => Promise<void> | void;
 
 function peek<T>(array: T[]) { return array[array.length - 1]; }
 
+export interface Suite {
+    assertions: {
+        softFail(error: any): void;
+        soften<T extends object>(subject: T): T;
+        softly(action: () => Promise<void> | void): Promise<void>;
+        silence<T extends object>(subject: T): T;
+    };
+    fixture(description: string, spec: Spec): void;
+    testcase(description: string, spec: Spec): void;
+    subcase(description: string, spec: Spec): Promise<void>;
+    report(stream?: Stream, reporter?: Reporter): Promise<void>;
+    message(message: string): Promise<void>;
+};
+
 interface TestcaseContext {
     description: string;
     subcases: Set<string>;
@@ -15,7 +30,6 @@ interface TestcaseContext {
     complete: Promise<void>;
     report: Report;
 };
-
 function makeTestcaseContext(description: string, report: Report): TestcaseContext {
     return {
         description,
@@ -34,7 +48,6 @@ interface TestcaseState {
     stackIndex: number;
     stack: TestcaseContext[];
 };
-
 function makeTestcaseState(baseReport: Report): TestcaseState {
     const base = baseReport;
     return {
@@ -49,7 +62,7 @@ function makeTestcaseState(baseReport: Report): TestcaseState {
 
 export const defaultStream: Stream = console.log;
 export const defaultReporter: Reporter = tap;
-export function suite() {
+export function suite(): Suite {
     async function nextPass(state: TestcaseState, desc: string, spec: Spec): Promise<string> {
         const s = state;
         // run begin
@@ -60,6 +73,8 @@ export function suite() {
             await spec();
             await s.stack[0].complete;
         } catch (e) {
+            if (e instanceof TestError)
+                throw e;
             s.currentReport.fail(e);
         }
         peek(s.stack).subcase = peek(s.stack).subcases[Symbol.iterator]();
@@ -85,6 +100,8 @@ export function suite() {
             await spec();
             await s.stack[s.stackIndex].complete;
         } catch (e) {
+            if (e instanceof TestError)
+                throw e;
             s.currentReport.fail(e);
         }
         s.stackIndex--;
@@ -120,10 +137,19 @@ export function suite() {
             silence
         },
 
+        async message(message: string): Promise<void> {
+            if (!testcaseState) {
+                throw new TestError('subcase should occur within testcase');
+            }
+
+            testcaseState.currentReport.diagnostic(message);
+        },
+
         testcase(description: string, spec: Spec): void {
             tests.push(async report => {
+                const r = report;
                 try {
-                    testcaseState = makeTestcaseState(report);
+                    testcaseState = makeTestcaseState(r);
                     const s = spec;
                     let desc = description;
                     do {
@@ -172,10 +198,14 @@ export function suite() {
 
         async report(stream: Stream = defaultStream, reporter: Reporter = defaultReporter): Promise<void> {
             const r = reporter(stream);
-            for (const test of tests) {
-                await test(r);
+            try {
+                for (const test of tests) {
+                    await test(r);
+                }
+                r.end();
+            } catch (e) {
+                r.bailOut(e);
             }
-            r.end();
         }
     };
 };

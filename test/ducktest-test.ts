@@ -1,5 +1,6 @@
 import { strict as assert } from 'assert';
 import { testcase, subcase, assertions, report, tap, suite, Stream } from '../dist/ducktest.js';
+import { TestError } from '../dist/test-error.js';
 
 testcase('make a new report', async () => {
     let output: string[] = [];
@@ -79,6 +80,35 @@ testcase('make a new report', async () => {
             '    ok - failing subcase # SKIP enclosing case failed',
             '    ok - empty subcase # SKIP enclosing case failed',
             'not ok - test'
+        ]);
+    });
+
+    subcase('bail out of a test case after a message', async () => {
+        await s.testcase('test', () => {
+            s.message('message');
+            throw new TestError('cause');
+        });
+        await s.report(stream);
+        assert.deepEqual(output, [
+            '# test',
+            '    # message',
+            'Bail out! cause'
+        ]);
+    });
+
+    subcase('bail out of a subcase after a message', async () => {
+        await s.testcase('test', () => {
+            s.subcase('subcase', () => {
+                s.message('message');
+                throw new TestError('cause');
+            });
+        });
+        await s.report(stream);
+        assert.deepEqual(output, [
+            '# test',
+            '    # subcase',
+            '        # message',
+            'Bail out! cause'
         ]);
     });
 });
