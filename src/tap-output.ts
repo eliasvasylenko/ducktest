@@ -13,6 +13,7 @@ export interface Report {
     diagnostic(message: string): void;
     fail(cause: any): void;
     end(message?: string): void;
+    bailOut(cause?: any): void;
     success: boolean;
 };
 export interface Stream {
@@ -52,6 +53,9 @@ class TapReport implements Report {
         if (this._ongoingSubtests[Ordering.Concurrent] + this._ongoingSubtests[Ordering.Serial]) throw new TestError('subtests not ended');
         this._ended = true;
         this._endMessage(message);
+    }
+    bailOut(cause?: any) {
+        this._stream(`Bail out!${cause?.message ? (' ' + cause.message) : ''}`)
     }
     _endMessage(message?: string) {
         if (message != null) {
