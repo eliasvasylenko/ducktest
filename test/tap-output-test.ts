@@ -5,14 +5,13 @@ import { tap, Ordering, Stream, Reporter } from '../dist/tap-output.js';
 const assert: typeof strict = assertions.silence(strict);
 
 testcase('start a report', async () => {
-    let output: string[] = [];
-    const report = tap({
-        write(lines) {
-            for (const line of lines.split('\n')) {
-                output.push(line);
-            }
+    const output: string[] = [];
+    const stream: Stream = lines => {
+        for (const line of lines.split('\n')) {
+            output.push(line);
         }
-    });
+    };
+    const report = tap(stream);
 
     subcase('end the report', () => {
         report.end();
@@ -41,6 +40,14 @@ testcase('start a report', async () => {
             '    # two',
             '    # three',
             'ok - subtest'
+        ]);
+    });
+
+    subcase('emit output on original stream while report is in progress', () => {
+        stream('stream output')
+        report.end();
+        assert.deepEqual(output, [
+            'stream output'
         ]);
     });
 });
