@@ -22,6 +22,10 @@ export function tap(writeLine: Stream): Report {
     return new TapReport(writeLine);
 };
 
+export function prepend(prefix: string, lines: string) {
+    return prefix + lines.replaceAll('\n', '\n' + prefix);
+}
+
 class TapReport implements Report {
     _stream: Stream;
     _ended = false;
@@ -37,7 +41,7 @@ class TapReport implements Report {
     beginSubtest(description: string, ordering = Ordering.Serial): Report {
         return new TapSubReport(this, description, ordering);
     }
-    diagnostic(message?: string) { this._stream.write('# ' + message); }
+    diagnostic(message: string) { this._stream.write(prepend('# ', message)); }
     fail(cause: any) {
         this.success = false;
         this._stream.write(`not ok${cause?.message ? ' - ' + cause.message : ''}`)
@@ -76,7 +80,7 @@ class TapSubReport extends TapReport {
                 hasContent = true;
                 parent.diagnostic(description);
             }
-            parent._stream.write(prefix + line);
+            parent._stream.write(prepend(prefix, line));
         };
         super({ write });
         this.#parent = parent;
