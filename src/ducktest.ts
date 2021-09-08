@@ -1,7 +1,7 @@
 export * from './assertions.js';
 import { soften, silence } from './assertions.js';
-export * from './tap-output.js';
-import { tap, Reporter, Report, Stream } from './tap-output.js';
+export { Ordering, Reporter, Report, Stream, tap } from './tap-output.js';
+import { Ordering, Reporter, Report, Stream, tap, prepend } from './tap-output.js';
 import { TestError } from './test-error.js';
 
 type Spec = () => Promise<void> | void;
@@ -52,7 +52,7 @@ export const defaultStream: Stream = {
     open() {
         this.write = console.log;
         console.log = line => {
-            this.write('# ' + line);
+            this.write(prepend('# ', line));
         };
     },
     close() {
@@ -113,8 +113,9 @@ export function suite() {
     return {
         assertions: {
             softFail(error: any) {
-                if (!testcaseState)
-                    throw ''; // TODO
+                if (!testcaseState) {
+                    throw new TestError('soft failure should occur within testcase');
+                }
                 testcaseState.currentReport.fail(error);
             },
             soften<T extends object>(subject: T): T {
@@ -146,11 +147,8 @@ export function suite() {
         },
 
         subcase(description: string, spec: Spec): Promise<void> {
-            if (!testcaseState)
-                throw ''; // TODO
-
-            if (testcaseState.stack.length === 0) {
-                throw new TestError('subcase should appear inside testcase');
+            if (!testcaseState) {
+                throw new TestError('subcase should occur within testcase');
             }
 
             if (testcaseState.currentPass.subcasesEncountered.has(description)) {
