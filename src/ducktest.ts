@@ -1,7 +1,7 @@
 export * from './assertions.js';
 import { soften, silence } from './assertions.js';
 export { Ordering, Reporter, Report, Stream, tap } from './tap-output.js';
-import { Ordering, Reporter, Report, Stream, tap, prepend } from './tap-output.js';
+import { Ordering, Reporter, Report, Stream, tap } from './tap-output.js';
 import { TestError } from './test-error.js';
 
 type Spec = () => Promise<void> | void;
@@ -47,18 +47,7 @@ function makeTestcaseState(baseReport: Report): TestcaseState {
     };
 }
 
-export const defaultStream: Stream = {
-    write: () => { },
-    open() {
-        this.write = console.log;
-        console.log = line => {
-            this.write(prepend('# ', line));
-        };
-    },
-    close() {
-        console.log = this.write;
-    }
-};
+export const defaultStream: Stream = console.log;
 export const defaultReporter: Reporter = tap;
 export function suite() {
     async function nextPass(state: TestcaseState, desc: string, spec: Spec): Promise<string> {
@@ -200,4 +189,3 @@ export const report = s.report.bind(s);
 if (process?.on) {
     process?.on('exit', () => report());
 }
-

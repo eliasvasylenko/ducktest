@@ -3,7 +3,7 @@ import { testcase, subcase, assertions, report, tap, suite, Stream } from '../di
 
 testcase('make a new report', async () => {
     let output: string[] = [];
-    const stream: Stream = { write(line) { output.push(line); } };
+    const stream: Stream = line => output.push(line);
     const s = suite();
 
     subcase('run an empty test', async () => {
