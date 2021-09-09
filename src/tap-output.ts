@@ -4,12 +4,17 @@ export enum Ordering {
     Concurrent,
     Serial
 }
+enum Status {
+    Empty,
+    Begun,
+    Ended
+}
 
 export interface Reporter {
-    (stream: Stream): Report;
+    beginReport(plan?: number): Report;
 };
 export interface Report {
-    beginSubtest(desc: string, ordering?: Ordering): Report;
+    beginSubsection(desc: string, ordering?: Ordering): Report;
     diagnostic(message: string): void;
     fail(cause: any): void;
     end(message?: string): void;
@@ -19,42 +24,58 @@ export interface Report {
 export interface Stream {
     (line: string): void;
 };
-export function tap(writeLine: Stream): Report {
-    return new TapReport(writeLine);
+export function tap(writeLine: Stream): Reporter {
+    return { beginReport(plan: number) { return new TapReport(writeLine, plan); } };
 };
 
 function prepend(prefix: string, lines: string) {
     return prefix + lines.replaceAll('\n', '\n' + prefix);
 }
+function alreadyEnded() {
+    throw new TestError('report already ended');
+}
 
-class TapReport implements Report {
+class TapOutput implements Report {
     _stream: Stream;
-    _ended = false;
-    _ongoingSubtests = {
+    #plan?: number;
+    #subtests = 0;
+    _ongoingSubsections = {
         [Ordering.Concurrent]: 0,
         [Ordering.Serial]: 0
     };
+    _hasContent = false;
     success = true;
-    constructor(stream: Stream) {
+    constructor(stream: Stream, plan?: number) {
         this._stream = stream;
+        if (plan != null) {
+            this._stream(`1..${plan}`);
+            this.#plan = plan;
+        }
     }
-    beginSubtest(description: string, ordering = Ordering.Serial): Report {
-        return new TapSubReport(this, description, ordering);
+    beginSubsection(description: string, ordering = Ordering.Serial): Report {
+        this.#subtests++;
+        return new TapSubsection(this, description, ordering);
     }
     diagnostic(message: string) { this._stream(prepend('# ', message)); }
     fail(cause: any) {
+        this.#subtests++;
         this.success = false;
         this._stream(`not ok${cause?.message ? ' - ' + cause.message : ''}`)
         this._stream('  ---');
         this._stream('  ...');
     }
     end(message?: string) {
-        if (this._ended) throw new TestError('already ended!');
-        if (this._ongoingSubtests[Ordering.Concurrent] + this._ongoingSubtests[Ordering.Serial]) throw new TestError('subtests not ended');
-        this._ended = true;
+        this.end = alreadyEnded;
+        this.bailOut = alreadyEnded;
+        if (this._ongoingSubsections[Ordering.Concurrent] + this._ongoingSubsections[Ordering.Serial])
+            throw new TestError('subsection(s) not ended');
+        if (this.#plan == null && this._hasContent)
+            this._stream(`1..${this.#subtests}`)
         this._endMessage(message);
     }
     bailOut(cause?: any) {
+        this.end = alreadyEnded;
+        this.bailOut = alreadyEnded;
         this._stream(`Bail out!${cause?.message ? (' ' + cause.message) : ''}`)
     }
     _endMessage(message?: string) {
@@ -64,30 +85,37 @@ class TapReport implements Report {
     }
 }
 
-class TapSubReport extends TapReport {
-    #parent: TapReport;
+class TapReport extends TapOutput {
+    constructor(stream: Stream, plan?: number) {
+        stream('TAP version 13');
+        super(stream, plan);
+        this._hasContent = true;
+    }
+}
+
+class TapSubsection extends TapOutput {
+    #parent: TapOutput;
     #description: string;
     #ordering: Ordering;
-    constructor(parent: TapReport, description: string, ordering: Ordering) {
-        parent._ongoingSubtests[ordering]++;
+    constructor(parent: TapOutput, description: string, ordering: Ordering, plan?: number) {
+        parent._ongoingSubsections[ordering]++;
 
         const o = ordering;
-        let hasContent = false;
         const prefix = ordering == Ordering.Concurrent ? `  ${description}|  ` : '    ';
         const write = (line: string) => {
-            if (o === Ordering.Serial && !hasContent) {
-                hasContent = true;
-                parent.diagnostic(description);
+            if (o === Ordering.Serial && !this._hasContent) {
+                this._hasContent = true;
+                parent._stream(`[${description}]`);
             }
             parent._stream(prepend(prefix, line));
         };
-        super(write);
+        super(write, plan);
         this.#parent = parent;
         this.#description = description;
         this.#ordering = ordering;
     }
     _endMessage(message?: string) {
-        this.#parent._ongoingSubtests[this.#ordering as Ordering]--;
+        this.#parent._ongoingSubsections[this.#ordering as Ordering]--;
         this.#parent._stream(`${this.success ? 'ok' : 'not ok'} - ${this.#description}${message ? ' # ' + message : ''}`);
         this.#parent.success &&= this.success;
     }
