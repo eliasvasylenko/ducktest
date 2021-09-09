@@ -11,6 +11,8 @@ testcase('make a new report', async () => {
         await s.testcase('empty test', () => { });
         await s.report(stream);
         assert.deepEqual(output, [
+            'TAP version 13',
+            '1..1',
             'ok - empty test'
         ]);
     });
@@ -21,10 +23,13 @@ testcase('make a new report', async () => {
         });
         await s.report(stream);
         assert.deepEqual(output, [
-            '# failing test',
+            'TAP version 13',
+            '1..1',
+            '[failing test]',
             '    not ok - failure',
             '      ---',
             '      ...',
+            '    1..1',
             'not ok - failing test'
         ]);
     });
@@ -36,9 +41,12 @@ testcase('make a new report', async () => {
         });
         await s.report(stream);
         assert.deepEqual(output, [
-            '# passing test',
+            'TAP version 13',
+            '1..1',
+            '[passing test]',
             '    ok - subcase one',
             '    ok - subcase two',
+            '    1..2',
             'ok - passing test'
         ]);
     });
@@ -52,13 +60,17 @@ testcase('make a new report', async () => {
         });
         await s.report(stream);
         assert.deepEqual(output, [
-            '# test',
-            '    # failing subcase',
+            'TAP version 13',
+            '1..1',
+            '[test]',
+            '    [failing subcase]',
             '        not ok - failure',
             '          ---',
             '          ...',
+            '        1..1',
             '    not ok - failing subcase',
             '    ok - empty subcase',
+            '    1..2',
             'not ok - test'
         ]);
     });
@@ -73,12 +85,15 @@ testcase('make a new report', async () => {
         });
         await s.report(stream);
         assert.deepEqual(output, [
-            '# test',
+            'TAP version 13',
+            '1..1',
+            '[test]',
             '    not ok - failure',
             '      ---',
             '      ...',
             '    ok - failing subcase # SKIP enclosing case failed',
             '    ok - empty subcase # SKIP enclosing case failed',
+            '    1..3',
             'not ok - test'
         ]);
     });
@@ -90,7 +105,9 @@ testcase('make a new report', async () => {
         });
         await s.report(stream);
         assert.deepEqual(output, [
-            '# test',
+            'TAP version 13',
+            '1..1',
+            '[test]',
             '    # message',
             'Bail out! cause'
         ]);
@@ -105,8 +122,10 @@ testcase('make a new report', async () => {
         });
         await s.report(stream);
         assert.deepEqual(output, [
-            '# test',
-            '    # subcase',
+            'TAP version 13',
+            '1..1',
+            '[test]',
+            '    [subcase]',
             '        # message',
             'Bail out! cause'
         ]);

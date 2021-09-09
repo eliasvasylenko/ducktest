@@ -19,7 +19,7 @@ export interface Suite {
     fixture(description: string, spec: Spec): void;
     testcase(description: string, spec: Spec): void;
     subcase(description: string, spec: Spec): Promise<void>;
-    report(stream?: Stream, reporter?: Reporter): Promise<void>;
+    report(stream?: Stream | Reporter): Promise<void>;
     message(message: string): Promise<void>;
 };
 
@@ -36,7 +36,7 @@ function makeTestcaseContext(description: string, report: Report): TestcaseConte
         subcases: new Set(),
         subcase: [][Symbol.iterator](),
         complete: Promise.resolve(),
-        report: report.beginSubtest(description)
+        report: report.beginSubsection(description)
     };
 }
 
@@ -60,8 +60,7 @@ function makeTestcaseState(baseReport: Report): TestcaseState {
     };
 }
 
-export const defaultStream: Stream = console.log;
-export const defaultReporter: Reporter = tap;
+export const defaultReporter: Reporter = tap(console.log);
 export function suite(): Suite {
     async function nextPass(state: TestcaseState, desc: string, spec: Spec): Promise<string> {
         const s = state;
@@ -82,7 +81,7 @@ export function suite(): Suite {
         let value;
         if (!s.currentReport.success) {
             while (!({ value } = (peek(s.stack)?.subcase?.next() ?? {}))?.done) {
-                s.currentReport?.beginSubtest(value).end('SKIP enclosing case failed')
+                s.currentReport?.beginSubsection(value).end('SKIP enclosing case failed')
             }
         }
 
@@ -196,15 +195,20 @@ export function suite(): Suite {
             });
         },
 
-        async report(stream: Stream = defaultStream, reporter: Reporter = defaultReporter): Promise<void> {
-            const r = reporter(stream);
+        async report(output?: Stream | Reporter): Promise<void> {
+            const reporter = output
+                ? (('beginReport' in output)
+                    ? output as Reporter
+                    : tap(output as Stream))
+                : defaultReporter;
+            const report = reporter.beginReport(tests.length);
             try {
                 for (const test of tests) {
-                    await test(r);
+                    await test(report);
                 }
-                r.end();
+                report.end();
             } catch (e) {
-                r.bailOut(e);
+                report.bailOut(e);
             }
         }
     };

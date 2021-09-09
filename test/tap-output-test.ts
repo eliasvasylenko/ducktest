@@ -4,18 +4,20 @@ import { tap, Ordering, Stream, Reporter } from '../dist/tap-output.js';
 
 const assert: typeof strict = assertions.silence(strict);
 
-testcase('start a report', async () => {
+testcase('start a report without a plan', async () => {
     const output: string[] = [];
     const stream: Stream = lines => {
         for (const line of lines.split('\n')) {
             output.push(line);
         }
     };
-    const report = tap(stream);
+    const report = tap(stream).beginReport();
 
     subcase('end the report', () => {
         report.end();
         assert.deepEqual(output, [
+            'TAP version 13',
+            '1..0'
         ]);
     });
 
@@ -23,23 +25,28 @@ testcase('start a report', async () => {
         report.diagnostic('one\ntwo\nthree');
         report.end();
         assert.deepEqual(output, [
+            'TAP version 13',
             '# one',
             '# two',
-            '# three'
+            '# three',
+            '1..0'
         ]);
     });
 
     subcase('emit multi-line diagnostic from subcase', () => {
-        const subtest = report.beginSubtest('subtest');
+        const subtest = report.beginSubsection('subtest');
         subtest.diagnostic('one\ntwo\nthree');
         subtest.end();
         report.end();
         assert.deepEqual(output, [
-            '# subtest',
+            'TAP version 13',
+            '[subtest]',
             '    # one',
             '    # two',
             '    # three',
-            'ok - subtest'
+            '    1..0',
+            'ok - subtest',
+            '1..1'
         ]);
     });
 
@@ -47,7 +54,9 @@ testcase('start a report', async () => {
         stream('stream output')
         report.end();
         assert.deepEqual(output, [
-            'stream output'
+            'TAP version 13',
+            'stream output',
+            '1..0'
         ]);
     });
 });
