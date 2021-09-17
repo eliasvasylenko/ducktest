@@ -1,11 +1,11 @@
 import { strict as assert } from 'assert';
-import { testcase, subcase, assertions, report, tap, suite, Stream } from '../dist/ducktest.js';
+import { testcase, subcase, Suite, Stream } from '../dist/ducktest.js';
 import { TestError } from '../dist/test-error.js';
 
 testcase('make a new report', async () => {
     let output: string[] = [];
     const stream: Stream = line => output.push(line);
-    const s = suite();
+    const s = new Suite();
 
     subcase('run an empty test', async () => {
         await s.testcase('empty test', () => { });
@@ -19,7 +19,7 @@ testcase('make a new report', async () => {
 
     subcase('run a failing test', async () => {
         await s.testcase('failing test', () => {
-            s.assertions.softFail(new Error('failure'));
+            s.softFail(new Error('failure'));
         });
         await s.report(stream);
         assert.deepEqual(output, [
@@ -54,7 +54,7 @@ testcase('make a new report', async () => {
     subcase('run a failing subtest followed by another subtest', async () => {
         await s.testcase('test', () => {
             s.subcase('failing subcase', () => {
-                s.assertions.softFail(new Error('failure'));
+                s.softFail(new Error('failure'));
             });
             s.subcase('empty subcase', () => { });
         });
@@ -77,9 +77,9 @@ testcase('make a new report', async () => {
 
     subcase('run a failing test case with subcases', async () => {
         await s.testcase('test', () => {
-            s.assertions.softFail(new Error('failure'));
+            s.softFail(new Error('failure'));
             s.subcase('failing subcase', () => {
-                s.assertions.softFail(new Error('failure'));
+                s.softFail(new Error('failure'));
             });
             s.subcase('empty subcase', () => { });
         });
@@ -99,11 +99,14 @@ testcase('make a new report', async () => {
     });
 
     subcase('bail out of a test case after a message', async () => {
+        console.log('                         1');
         await s.testcase('test', () => {
             s.message('message');
             throw new TestError('cause');
         });
+        console.log('                         2');
         await s.report(stream);
+        console.log('                         3');
         assert.deepEqual(output, [
             'TAP version 13',
             '1..1',
@@ -117,10 +120,12 @@ testcase('make a new report', async () => {
         await s.testcase('test', () => {
             s.subcase('subcase', () => {
                 s.message('message');
+                console.log('@@@@@@@@@@@@@@@@@@');
                 throw new TestError('cause');
             });
         });
         await s.report(stream);
+        console.log('+++++++++++++++++');
         assert.deepEqual(output, [
             'TAP version 13',
             '1..1',

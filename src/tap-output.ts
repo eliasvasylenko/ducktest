@@ -11,10 +11,10 @@ enum Status {
 }
 
 export interface Reporter {
-    beginReport(plan?: number): Report;
+    beginReport(ordering?: Ordering, plan?: number): Report;
 };
 export interface Report {
-    beginSubsection(desc: string, ordering?: Ordering): Report;
+    beginSubsection(desc: string): Report;
     diagnostic(message: string): void;
     fail(cause: any): void;
     end(message?: string): void;
@@ -25,18 +25,16 @@ export interface Stream {
     (line: string): void;
 };
 export function tap(writeLine: Stream): Reporter {
-    return { beginReport(plan: number) { return new TapReport(writeLine, plan); } };
+    return { beginReport(ordering: Ordering = Ordering.Serial, plan?: number) { return new TapReport(writeLine, ordering, plan); } };
 };
 
 function prepend(prefix: string, lines: string) {
     return prefix + lines.replaceAll('\n', '\n' + prefix);
 }
-function alreadyEnded() {
-    throw new TestError('report already ended');
-}
 
 class TapOutput implements Report {
     _stream: Stream;
+    #ordering: Ordering;
     #plan?: number;
     #subtests = 0;
     _ongoingSubsections = {
@@ -45,19 +43,25 @@ class TapOutput implements Report {
     };
     _hasContent = false;
     success = true;
-    constructor(stream: Stream, plan?: number) {
+    constructor(stream: Stream, ordering: Ordering, plan?: number) {
         this._stream = stream;
+        this.#ordering = ordering;
         if (plan != null) {
             this._stream(`1..${plan}`);
             this.#plan = plan;
         }
     }
-    beginSubsection(description: string, ordering = Ordering.Serial): Report {
+    beginSubsection(description: string): Report {
+        this.#checkEnded();
         this.#subtests++;
-        return new TapSubsection(this, description, ordering);
+        return new TapSubsection(this, description, this.#ordering);
     }
-    diagnostic(message: string) { this._stream(prepend('# ', message)); }
+    diagnostic(message: string) {
+        this.#checkEnded();
+        this._stream(prepend('# ', message));
+    }
     fail(cause: any) {
+        this.#checkEnded();
         this.#subtests++;
         this.success = false;
         this._stream(`not ok${cause?.message ? ' - ' + cause.message : ''}`)
@@ -65,8 +69,9 @@ class TapOutput implements Report {
         this._stream('  ...');
     }
     end(message?: string) {
-        this.end = alreadyEnded;
-        this.bailOut = alreadyEnded;
+        this.#checkEnded();
+        this.#ended = true;
+
         if (this._ongoingSubsections[Ordering.Concurrent] + this._ongoingSubsections[Ordering.Serial])
             throw new TestError('subsection(s) not ended');
         if (this.#plan == null && this._hasContent)
@@ -74,8 +79,9 @@ class TapOutput implements Report {
         this._endMessage(message);
     }
     bailOut(cause?: any) {
-        this.end = alreadyEnded;
-        this.bailOut = alreadyEnded;
+        this.#checkEnded();
+        this.#ended = true;
+
         this._stream(`Bail out!${cause?.message ? (' ' + cause.message) : ''}`)
     }
     _endMessage(message?: string) {
@@ -83,12 +89,17 @@ class TapOutput implements Report {
             this.diagnostic(message);
         }
     }
+    #ended = false;
+    #checkEnded() {
+        if (this.#ended)
+            throw new TestError('report already ended');
+    }
 }
 
 class TapReport extends TapOutput {
-    constructor(stream: Stream, plan?: number) {
+    constructor(stream: Stream, ordering: Ordering, plan?: number) {
         stream('TAP version 13');
-        super(stream, plan);
+        super(stream, ordering, plan);
         this._hasContent = true;
     }
 }
@@ -109,7 +120,7 @@ class TapSubsection extends TapOutput {
             }
             parent._stream(prepend(prefix, line));
         };
-        super(write, plan);
+        super(write, ordering, plan);
         this.#parent = parent;
         this.#description = description;
         this.#ordering = ordering;

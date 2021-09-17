@@ -1,221 +1,274 @@
-export * from './assertions.js';
-import { fail } from 'assert/strict';
-import { soften, silence } from './assertions.js';
+import { config } from 'process';
+import { soften as softenImpl, silence as silenceImpl } from './assertions.js';
 export { Ordering, Reporter, Report, Stream, tap } from './tap-output.js';
 import { Ordering, Reporter, Report, Stream, tap } from './tap-output.js';
 import { TestError } from './test-error.js';
 
 type Spec = () => Promise<void> | void;
+type Action = () => Promise<void> | void;
+type Runner = (context: Partial<TestContext>, action: Action, description?: string) => Promise<void> | void;
+type TestCallback = (report: Report, runner: Runner, description: string, spec: Spec) => Promise<void>;
+type TestListener = (description: string, spec: Spec) => Promise<void>;
 
-function peek<T>(array: T[]) { return array[array.length - 1]; }
+async function runFixture(report: Report, runner: Runner, description: string, spec: Spec): Promise<void> {
+    await runner({
+        async fixture(): Promise<void> {
+            throw new TestError('fixture should not occur during fixture');
+        }
+    }, spec, description);
+}
 
-export interface Suite {
-    assertions: {
-        softFail(error: any): void;
-        soften<T extends object>(subject: T): T;
-        softly(action: () => Promise<void> | void): Promise<void>;
-        silence<T extends object>(subject: T): T;
+async function runTestcase(report: Report, runner: Runner, description: string, spec: Spec): Promise<void> {
+    await runCase(runner, description, spec, [], new Set());
+}
+
+async function runCase(runner: Runner, description: string, spec: Spec, descriptions: string[], subcasesEncounteredByParent: Set<string>): Promise<void> {
+    let children: string[] = [];
+
+    await runner({
+        subcase: runSubcase(children, descriptions, subcasesEncounteredByParent)
+    }, async () => {
+        await spec();
+
+        const subcasesEncountered = new Set([
+            ...subcasesEncounteredByParent,
+            ...children
+        ]);
+
+        await Promise.all(children.map(child => runCase(
+            runner,
+            child,
+            spec,
+            [...descriptions, child],
+            subcasesEncountered)));
+    }, description);
+}
+
+function runSubcase(children: string[], subcasesOnPath: Iterable<string>, subcasesEncounteredByParent: Set<string>): TestCallback {
+    const subcasesEncountered = new Set<string>();
+    function checkForDuplicates(description: string) {
+        if (subcasesEncountered.has(description))
+            throw new TestError('duplicate subcase name encountered during run');
+        subcasesEncountered.add(description);
+    }
+
+    const path = subcasesOnPath[Symbol.iterator]();
+    function nextEncounterSubcase(): TestCallback {
+        const nextSubcase = path.next();
+
+        if (nextSubcase.done) {
+            return async (report, runner, description) => {
+                checkForDuplicates(description);
+                children.push(description);
+            };
+        }
+
+        return async (report, runner, description, spec) => {
+            checkForDuplicates(description);
+
+            if (nextSubcase.value === description) {
+                return await runner({
+                    subcase: nextEncounterSubcase()
+                }, spec);
+            }
+
+            if (!subcasesEncounteredByParent.has(description)) {
+                throw new TestError('encountered unexpected subcase');
+            }
+        };
+    }
+
+    let encounterSubcase = nextEncounterSubcase();
+
+    return (report, runner, description, spec) => encounterSubcase(report, runner, description, spec);
+}
+
+interface TestContext {
+    testcase: TestCallback;
+    subcase: TestCallback;
+    fixture: TestCallback;
+}
+interface TestRunner {
+    testcase: TestListener;
+    subcase: TestListener;
+    fixture: TestListener;
+    report(): Report;
+    run(reporter: Reporter): Promise<void>;
+}
+type Plan = ((runner: TestRunner) => Promise<void>)[];
+
+function makeSynchronousTestRunner(): TestRunner {
+    let top: TestRunner;
+    let lastRun: Promise<void> = Promise.resolve();
+
+    async function run(context: Partial<TestContext>, report: Report, action: Action) {
+        const { testcase, subcase, fixture } = context;
+        const r = report;
+        const a = action;
+
+        await lastRun;
+        lastRun = Promise.resolve();
+
+        const previousTop = top;
+        top = {
+            ...top,
+            ...(testcase && { testcase(description, spec) { return testcase(top.report(), runSubsection, description, spec); } }),
+            ...(subcase && { subcase(description, spec) { return subcase(top.report(), runSubsection, description, spec); } }),
+            ...(fixture && { fixture(description, spec) { return fixture(top.report(), runSubsection, description, spec); } }),
+            run() { throw new TestError('report should not occur during report'); },
+            report() { return r; }
+        };
+
+        try {
+            let resolve: () => void;
+            const run = new Promise(r => resolve = r);
+            const newChildren = (async () => { await a(); })();
+            await lastRun;
+            lastRun = newChildren;
+            await lastRun;
+
+        } finally {
+            top = previousTop;
+        }
+    }
+
+    const runSubsection: Runner = async (context, action, description) => {
+        if (description) {
+            const report = top.report().beginSubsection(description);
+            try {
+                await run(context, report, action);
+                report.end();
+            } catch (e) {
+                if (e instanceof TestError) throw e;
+                report.fail(e);
+            }
+        } else {
+            await run(context, top.report(), action);
+        }
     };
-    fixture(description: string, spec: Spec): void;
-    testcase(description: string, spec: Spec): void;
-    subcase(description: string, spec: Spec): Promise<void>;
-    report(stream?: Stream | Reporter): Promise<void>;
-    message(message: string): Promise<void>;
-};
 
-interface TestcaseContext {
-    description: string;
-    subcases: Set<string>;
-    subcase: Iterator<string>;
-    complete: Promise<void>;
-    report: Report;
-};
-function makeTestcaseContext(description: string, report: Report): TestcaseContext {
+    async function runPlan(reporter: Reporter, plan: Plan) {
+        const context = { testcase: runTestcase, fixture: runFixture };
+        const report = reporter.beginReport(Ordering.Serial, plan.length);
+        try {
+            await run(context, report, async () => {
+                for (const test of plan) {
+                    await test(top);
+                }
+            });
+            report.end();
+        } catch (e) {
+            if (e instanceof TestError)
+                report.bailOut(e);
+            else
+                report.fail(e);
+        }
+    }
+
+    top = makePlanningInterface(runPlan);
+
     return {
-        description,
-        subcases: new Set(),
-        subcase: [][Symbol.iterator](),
-        complete: Promise.resolve(),
-        report: report.beginSubsection(description)
+        get run() { return top.run; },
+        get testcase() { return top.testcase; },
+        get subcase() { return top.subcase; },
+        get fixture() { return top.fixture; },
+        get report() { return top.report; }
     };
 }
 
-interface TestcaseState {
-    currentReport: Report;
-    currentPass: {
-        subcasesEncountered: Set<string>;
+function makeConcurrentTestRunner(): TestRunner {
+    let top: TestRunner;
+    let children: Promise<void> = Promise.resolve();
+
+    async function run(context: Partial<TestContext>, report: Report, action: Action) {
+        throw '';
     }
-    stackIndex: number;
-    stack: TestcaseContext[];
-};
-function makeTestcaseState(baseReport: Report): TestcaseState {
-    const base = baseReport;
+
+    const runSubsection: Runner = async (context, description, action) => {
+        throw '';
+    };
+
+    async function runPlan(reporter: Reporter, plan: Plan) {
+        throw '';
+    }
+
+    top = makePlanningInterface(runPlan);
+
     return {
-        get currentReport() { return peek(this.stack)?.report ?? base; },
-        currentPass: {
-            subcasesEncountered: new Set<string>()
+        get run() { return top.run; },
+        get testcase() { return top.testcase; },
+        get subcase() { return top.subcase; },
+        get fixture() { return top.fixture; },
+        get report() { return top.report; }
+    };
+}
+
+function makePlanningInterface(runPlan: (reporter: Reporter, plan: Plan) => Promise<void>): TestRunner {
+    const plan: Plan = [];
+    return {
+        async testcase(description, spec): Promise<void> {
+            const d = description;
+            const s = spec;
+            plan.push(runner => runner.testcase(d, s));
         },
-        stackIndex: 0,
-        stack: []
+        async subcase(): Promise<void> {
+            throw new TestError('subcase should occur during testcase');
+        },
+        async fixture(description, spec): Promise<void> {
+            const d = description;
+            const s = spec;
+            plan.push(runner => runner.fixture(d, s));
+        },
+        report(): Report {
+            throw new TestError('reporting should occur during test');
+        },
+        async run(reporter) { await runPlan(reporter, plan); }
     };
 }
 
 export const defaultReporter: Reporter = tap(console.log);
-export function suite(): Suite {
-    async function nextPass(state: TestcaseState, desc: string, spec: Spec): Promise<string> {
-        const s = state;
-        // run begin
-        s.stack.push(makeTestcaseContext(desc, s.currentReport));
+export class Suite {
+    #runner = makeSynchronousTestRunner();
 
-        s.currentPass.subcasesEncountered.clear();
+    async report(output?: Stream | Reporter): Promise<void> {
+        const reporter = output
+            ? ('beginReport' in output)
+                ? output as Reporter
+                : tap(output as Stream)
+            : defaultReporter;
+
+        await this.#runner.run(reporter);
+    }
+
+    async softFail(error: any) {
+        this.#runner.report().fail(error);
+    }
+    soften<T extends object>(subject: T): T {
+        return softenImpl(subject, this.softFail)
+    }
+    async softly(action: () => Promise<void> | void) {
         try {
-            await spec();
-            await s.stack[0].complete;
+            await action();
         } catch (e) {
-            if (e instanceof TestError)
-                throw e;
-            s.currentReport.fail(e);
+            this.softFail(e);
         }
-        peek(s.stack).subcase = peek(s.stack).subcases[Symbol.iterator]();
-
-        let value;
-        if (!s.currentReport.success) {
-            while (!({ value } = (peek(s.stack)?.subcase?.next() ?? {}))?.done) {
-                s.currentReport?.beginSubsection(value).end('SKIP enclosing case failed')
-            }
-        }
-
-        while (({ value } = (peek(s.stack)?.subcase?.next() ?? {}))?.done) {
-            // run complete
-            s.stack.pop()?.report.end();
-        }
-        return value;
     }
+    silence = silenceImpl;
 
-    async function nextSubcase(state: TestcaseState, spec: Spec) {
-        const s = state;
-        s.stackIndex++;
-        try {
-            await spec();
-            await s.stack[s.stackIndex].complete;
-        } catch (e) {
-            if (e instanceof TestError)
-                throw e;
-            s.currentReport.fail(e);
-        }
-        s.stackIndex--;
+    async message(message: string): Promise<void> {
+        this.#runner.report().diagnostic(message);
     }
-
-    async function scheduleSubcase(state: TestcaseState, description: string) {
-        const s = state;
-        s.stack[s.stackIndex].subcases.add(description);
-    }
-
-    async function skipSubcase() { }
-
-    const tests: ((report: Report) => Promise<void>)[] = [];
-    let testcaseState: TestcaseState | null;
-    return {
-        assertions: {
-            softFail(error: any) {
-                if (!testcaseState) {
-                    throw new TestError('soft failure should occur within testcase');
-                }
-                testcaseState.currentReport.fail(error);
-            },
-            soften<T extends object>(subject: T): T {
-                return soften(subject, this.softFail)
-            },
-            async softly(action: () => Promise<void> | void) {
-                try {
-                    await action();
-                } catch (e) {
-                    this.softFail(e);
-                }
-            },
-            silence
-        },
-
-        async message(message: string): Promise<void> {
-            if (!testcaseState) {
-                throw new TestError('subcase should occur within testcase');
-            }
-
-            testcaseState.currentReport.diagnostic(message);
-        },
-
-        testcase(description: string, spec: Spec): void {
-            tests.push(async report => {
-                const r = report;
-                try {
-                    testcaseState = makeTestcaseState(r);
-                    const s = spec;
-                    let desc = description;
-                    do {
-                        desc = await nextPass(testcaseState, desc, s);
-                    } while (desc);
-                } finally {
-                    testcaseState = null;
-                }
-            });
-        },
-
-        subcase(description: string, spec: Spec): Promise<void> {
-            if (!testcaseState) {
-                throw new TestError('subcase should occur within testcase');
-            }
-
-            if (testcaseState.currentPass.subcasesEncountered.has(description)) {
-                throw new TestError('duplicate subcase name encountered during run');
-            } else {
-                testcaseState.currentPass.subcasesEncountered.add(description);
-            }
-
-            if (testcaseState.stack[testcaseState.stackIndex + 1]?.description === description) {
-                const i = testcaseState.stackIndex;
-                return testcaseState.stack[i].complete = nextSubcase(testcaseState, spec);
-            }
-
-            for (let i = 0; i <= testcaseState.stackIndex; i++) {
-                if (testcaseState.stack[i].subcases.has(description)) {
-                    return skipSubcase();
-                }
-            }
-
-            if ((testcaseState.stackIndex + 1) == testcaseState.stack.length) {
-                return scheduleSubcase(testcaseState, description);
-            }
-
-            return Promise.reject(new TestError('encountered unexpected subcase'));
-        },
-
-        fixture(description: string, spec: Spec): void {
-            tests.push(() => {
-                return Promise.reject(new TestError('fixtures are not implemented'));
-            });
-        },
-
-        async report(output?: Stream | Reporter): Promise<void> {
-            const reporter = output
-                ? (('beginReport' in output)
-                    ? output as Reporter
-                    : tap(output as Stream))
-                : defaultReporter;
-            const report = reporter.beginReport(tests.length);
-            try {
-                for (const test of tests) {
-                    await test(report);
-                }
-                report.end();
-            } catch (e) {
-                report.bailOut(e);
-            }
-        }
-    };
+    testcase(description: string, spec: Spec) { return this.#runner.testcase(description, spec); }
+    subcase(description: string, spec: Spec) { return this.#runner.subcase(description, spec); }
+    fixture(description: string, spec: Spec) { return this.#runner.fixture(description, spec); }
 };
 
-const s = suite();
-export const assertions = s.assertions;
+const s = new Suite();
+export default s;
+export const softFail = s.softFail.bind(s);
+export const soften = s.soften.bind(s);
+export const softly = s.softly.bind(s);
+export const silence = s.silence.bind(s);
 export const testcase = s.testcase.bind(s);
 export const subcase = s.subcase.bind(s);
 export const report = s.report.bind(s);
