@@ -1,5 +1,5 @@
 import { strict as assert } from 'assert';
-import { testcase, subcase, Suite, Stream } from '../dist/ducktest.js';
+import { testcase, subcase, message, softFail, Suite, Stream } from '../dist/ducktest.js';
 import { TestError } from '../dist/test-error.js';
 
 testcase('make a new report', async () => {
@@ -99,14 +99,11 @@ testcase('make a new report', async () => {
     });
 
     subcase('bail out of a test case after a message', async () => {
-        console.log('                         1');
         await s.testcase('test', () => {
             s.message('message');
             throw new TestError('cause');
         });
-        console.log('                         2');
         await s.report(stream);
-        console.log('                         3');
         assert.deepEqual(output, [
             'TAP version 13',
             '1..1',
@@ -120,12 +117,11 @@ testcase('make a new report', async () => {
         await s.testcase('test', () => {
             s.subcase('subcase', () => {
                 s.message('message');
-                console.log('@@@@@@@@@@@@@@@@@@');
                 throw new TestError('cause');
             });
         });
         await s.report(stream);
-        console.log('+++++++++++++++++');
+        
         assert.deepEqual(output, [
             'TAP version 13',
             '1..1',

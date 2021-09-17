@@ -62,6 +62,7 @@ class TapOutput implements Report {
     }
     fail(cause: any) {
         this.#checkEnded();
+
         this.#subtests++;
         this.success = false;
         this._stream(`not ok${cause?.message ? ' - ' + cause.message : ''}`)
