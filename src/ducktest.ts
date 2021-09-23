@@ -20,11 +20,11 @@ type ContextRunner = (context: Context) => (description: string, action: (tester
 type TestImpl = (runner: ContextRunner) => Test;
 type SyncAsync = Promise<void> | void;
 
-function syncAsyncChain(from: SyncAsync, ...to: (() => SyncAsync)[]) {
-    try {
-        for (const t of to) from = from?.then(t) ?? t();
-        return from;
-    } catch (e) { throw e; }
+function syncAsyncChain(action: () => SyncAsync, ...actions: (() => SyncAsync)[]) {
+    let result = action();
+    for (const action of actions)
+        result = result?.then(action) ?? action();
+    return result;
 }
 function syncAsyncCatch(tryer: () => SyncAsync, catcher: (e: any) => void) {
     try {
@@ -60,7 +60,7 @@ function runCase(runner: ContextRunner, subcasesOnPath: Iterable<string> = [], s
 
         return r(description, tester =>
             syncAsyncChain(
-                spec(),
+                spec,
                 () => context.promise,
                 () => {
                     if (!tester.report().success) {
@@ -117,7 +117,9 @@ function runSubcase(context: CaseContext, subcasesOnPath: Iterable<string>, subc
 
                 if (nextSubcase.value === description) {
                     encounterSubcase = nextEncounterSubcase();
-                    c.promise = syncAsyncChain(c.promise, spec);
+                    c.promise = syncAsyncChain(
+                        () => c.promise,
+                        spec);
                     return c.promise;
                 }
 
@@ -161,6 +163,7 @@ function makeSynchronousTester(): Tester {
                 () => void (top = previousTop));
         };
     }
+
     function runSubsection(stack: SynchronousStack): ContextRunner {
         const s = stack;
 
@@ -172,16 +175,18 @@ function makeSynchronousTester(): Tester {
                 const a = action;
 
                 return (s.promise = syncAsyncChain(
-                    s.promise,
+                    () => s.promise,
                     () => {
                         const subsection = s.report.beginSubsection(d);
                         const substack: SynchronousStack = { parent: s, report: subsection, description: d, promise: void null };
 
                         return syncAsyncChain(
-                            r(substack, tester =>
+                            () => r(substack, tester =>
                                 syncAsyncCatch(
-                                    () => syncAsyncChain(a(tester), () => subsection.end()),
-                                    (e: any) => {
+                                    () => syncAsyncChain(
+                                        () => a(tester),
+                                        () => subsection.end()),
+                                    e => {
                                         if (e instanceof TestError) throw e;
                                         subsection.fail(e);
                                         subsection.end();
@@ -190,7 +195,7 @@ function makeSynchronousTester(): Tester {
                     }));
             };
         };
-    };
+    }
 
     function runPlan(reporter: Reporter, plan: Plan) {
         const report = reporter.beginReport(Ordering.Serial, plan.length);
@@ -200,19 +205,19 @@ function makeSynchronousTester(): Tester {
 
         return syncAsyncCatch(() =>
             syncAsyncChain(
-                r(stack, tester => {
+                () => r(stack, tester => {
                     const r = tester;
                     let c: SyncAsync = void null;
                     for (const test of p) {
-                        c = syncAsyncChain(c, () => test(r));
+                        c = syncAsyncChain(
+                            () => c,
+                            () => test(r));
                     }
                     return c;
                 }),
                 () => stack.promise,
-                () => report.end())
-            , (e) => {
-                report.bailOut(e);
-            });
+                () => report.end()),
+            e => report.bailOut(e));
     }
 
     top = makePlanningInterface(runPlan);
@@ -267,7 +272,7 @@ export class Suite {
         this.#runner.report().fail(error);
     }
     soften<T extends object>(subject: T): T {
-        return softenImpl(subject, this.softFail)
+        return softenImpl(subject, e => this.softFail(e))
     }
     softly(action: () => SyncAsync) {
         return syncAsyncCatch(action, e => this.softFail(e));
