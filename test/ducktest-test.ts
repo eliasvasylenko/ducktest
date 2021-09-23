@@ -199,10 +199,6 @@ testcase('make a new report', async () => {
                 s.message(message);
             });
             message = 'again'
-            // TODO clear the promise on the stack here if we
-            // complete synchronously! Otherwise the next
-            // testcase is run in a then() and is unnecessarily
-            // asynced.
             s.testcase('second test', () => {
                 s.message(message);
             });
