@@ -1,4 +1,4 @@
-import { testcase, subcase, tap } from '../dist/ducktest.js';
+import { testcase, subcase, report } from '../dist/ducktest.js';
 import { soften, silence } from '../dist/assertions.js';
 import { strict as assert } from 'assert';
 
@@ -9,6 +9,8 @@ testcase('using soften', () => {
         const soft = soften(f, e => error = e);
 
         soft();
+
+        await new Promise(resolve => setTimeout(resolve, 100));
 
         assert.equal(error, 'error text');
     });

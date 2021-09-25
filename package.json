@@ -5,6 +5,7 @@
   "main": "ducktest",
   "type": "module",
   "scripts": {
+    "build": "./node_modules/.bin/tsc --build src test",
     "test": "./node_modules/.bin/tsc --build test && node tmp/tests.js",
     "start": "./node_modules/.bin/tsc --build src && node dist/ducktest.js"
   },

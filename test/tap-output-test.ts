@@ -1,8 +1,8 @@
 import { strict } from 'assert';
-import { testcase, subcase, assertions } from '../dist/ducktest.js';
+import { testcase, subcase, silence } from '../dist/ducktest.js';
 import { tap, Ordering, Stream, Reporter } from '../dist/tap-output.js';
 
-const assert: typeof strict = assertions.silence(strict);
+const assert: typeof strict = silence(strict);
 
 testcase('start a report without a plan', async () => {
     const output: string[] = [];
