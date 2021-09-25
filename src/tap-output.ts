@@ -128,6 +128,6 @@ class TapSubsection extends TapOutput {
     _endMessage(message?: string) {
         this.#parent._ongoingSubsections[this.#ordering as Ordering]--;
         this.#parent._stream(`${this.success ? 'ok' : 'not ok'} - ${this.#description}${message ? ' # ' + message : ''}`);
-        this.#parent.success &&= this.success;
+        this.#parent.success = this.#parent.success && this.success;
     }
 }
