@@ -5,9 +5,10 @@
   "main": "ducktest",
   "type": "module",
   "scripts": {
-    "build": "./node_modules/.bin/tsc --build src test",
-    "test": "./node_modules/.bin/tsc --build test && node tmp/tests.js",
-    "start": "./node_modules/.bin/tsc --build src && node dist/ducktest.js"
+    "build": "tsc --build src test",
+    "test": "tsc --build test && node tmp/tests.js",
+    "start": "tsc --build src && node dist/ducktest.js",
+    "prepublishOnly": "npm run build"
   },
   "repository": {
     "type": "git",
@@ -25,11 +26,13 @@
     "url": "https://github.com/StrangeSkies/ducktest/issues"
   },
   "homepage": "https://github.com/StrangeSkies/ducktest#readme",
-  "dependencies": {},
   "devDependencies": {
-    "chai": "^4.3.4",
     "@types/chai": "^4.2.21",
     "@types/node": "^16.6.2",
+    "@typescript-eslint/eslint-plugin": "^4.31.2",
+    "@typescript-eslint/parser": "^4.31.2",
+    "chai": "^4.3.4",
+    "eslint": "^7.32.0",
     "typescript": "^4.3.5"
   }
 }
