@@ -5,10 +5,9 @@
   "main": "ducktest",
   "type": "module",
   "scripts": {
-    "build": "tsc --build src test",
+    "build": "tsc --build src",
     "test": "tsc --build test && node tmp/tests.js",
-    "start": "tsc --build src && node dist/ducktest.js",
-    "prepublishOnly": "npm run build"
+    "start": "tsc --build src && node dist/ducktest.js"
   },
   "repository": {
     "type": "git",
