@@ -32,39 +32,44 @@ testcase('make a new duck', () => {
 });
 ```
 
-So in running the above test we make four passes over it, hitting the following cases each time:
-
-`make a new duck`
-
-`make a new duck :: feed it a burger`
-
-`make a new duck :: feed it some seeds`
-
-`make a new duck :: feed it some seeds :: feed it some more seeds`
+So in running the above test we make the following passes, hitting the listed cases each time:
+- Pass one: `make a new duck`
+- Pass two: `make a new duck`, `feed it a burger`
+- Pass three: `make a new duck`, `feed it some seeds`
+- Pass four: `make a new duck`, `feed it some seeds`, `feed it some more seeds`
 
 This model leans on developers' existing intuitions about normal control structures and lexical scoping, making tests easier to read *and* to write.
 
 Common setup and teardown can be written inline, and variables can generally be assigned to in the same place that they are declared. This means that readers don't need to bounce around between `beforeAll` and `afterEach` callbacks to search for hidden out-of-order side effects and variable assignments.
 
 ```js
-const pondService = await initPondService(); // before all cases
+fixture('prepare the pond service', () => {
+  // before all cases
+  const pondService = await initPondService();
 
-await testcase('introduce a duck to a pond', async () => {
-  const pond = await pondService.makePond(); // before each case
-  const duck = new Duck();
+  await testcase('introduce a duck to a pond', async () => {
+    // before each subcase
+    const duck = new Duck();
+    const pond = await pondService.makePond();
+    try {
+      duck.introduceTo(pond);
 
-  duck.introduceTo(pond);
+      assert.equal(duck.location(), pond);
 
-  assert.equal(duck.location(), pond);
+      await subcase('introduce a crocodile to the same pond', () => {
+        ...
+      });
 
-  await subcase('introduce a crocodile to the same pond', async () => {
-    ...
+      ...
+    } finally {
+      // after each subcase
+      pondService.destroyPond(pond);
+    }
   });
 
-  pondService.destroyPond(pond); // after each case
+  // after all cases
+  pondService.dispose();
 });
-
-pondService.dispose(); // after all cases
 ```
 
 Since tests are run as they are encountered don't forget to `await` the conclusion of an async test before teardown.
@@ -73,7 +78,7 @@ Since tests are run as they are encountered don't forget to `await` the conclusi
 
 This project adheres to the philosophy of doing one thing well, so it doesn't prescribe the use of any single assertion style or library.
 
-Both "hard" and "soft" assertions are supported; these mean, respectively, that upon failing an assert the caller can choose whether to bail out of the test case, or to continue with the possibility to report further failures.
+Both "hard" and "soft" assertions are supported; this means that upon failing an assert the caller can choose whether to bail out of the test case, or to continue with the possibility to report further failures, respectively.
 
 By these definitions exiting assertion libraries are typicaly hard by default, in that they throw upon failure. It is possible in ducktest to derive a soft version of such a library which mirrors the API exactly.
 
@@ -86,12 +91,13 @@ const softExpect = assertions.soften(expect);
 testcase('does it look like a duck?', () => {
   const duck = new Dog(); // oops!
   softExpect(duck).to.have.property('feathers');
+  softExpect(duck).to.have.property('legs');
   softExpect(duck).to.have.property('bill');
   softExpect(duck).to.have.property('wings');
 });
 ```
 
-The test above---given the obvious mistake---should report failures for all three assertions.
+The test above---given the obvious mistake---should report failures for three of the four assertions.
 
 The `soften` function should work for any typical property-chaining and function-chaining style of assertion API.
 
@@ -107,31 +113,28 @@ testcase('', async () => {
 
 ## Test Output
 
-The `testcase` and `subcase` functions exported from ducktest stream TAP output to stdout. This makes ducktest compatible with most reporters that support `tape` or `node tap`.
+Most of the testing and reporting functions exported from ducktest are associated with a "default suite". When running in Node, this suite is run and reported before exit, streaming TAP output to stdout. This makes ducktest compatible OOTB with most reporters that support `tape` or `node tap`.
 
 ```js
-import {testcase, subcase} from 'ducktest';
+import { testcase, subcase } from 'ducktest';
 ```
 
-It is also possible to ask ducktest for versions of `testcase` and `subcase` which stream output elsewhere.
+It is also possible to instantiate a fresh suite, for manual control of reporting.
 
 ```js
-import {testRunner} from 'ducktest';
-const {testcase, subcase} = testRunner({ output: stringBuffer });
+import { Suite } from 'ducktest';
+const suite = new Suite();
+const { testcase, subcase } = suite;
+
+...
+
+suite.report(customReporter)
 ```
-
-## Parallelism
-
-Test cases recording to the same output stream are run serially.
 
 ## Concurrency
 
-Test cases recording to the same output stream are run serially. This limitation exists because when async subcases are run concurrently it is not always possible to find which parent test they are associated with.
+Test cases recording to the same output stream are currently run serially. This limitation exists because when async subcases are run concurrently it is not always possible to find which parent test they are associated with, at least using standard web APIs in the browser.
 
-However I see this not as an objective failure, but as a tradeoff, as there are some benefits.
+The ducktest API *could* be modified to facilitate concurrency in the browser by explicitly passing context down to subcases, but this decreases the signal to noise ratio when reading tests, and all the local renaming and/or shadowing makes tests brittle to refactoring.
 
-Concurrent tests still need to write to an inherently serial output format. This makes memory utilisation less predictable as results need to be buffered to be serialised properly.
-
-The ducktest API *could* be modified to facilitate concurrency by explicitly passing context down to subcases, but this decreases the signal to noise ratio when reading tests, and all the local renaming and shadowing makes tests brittle to refactoring.
-
-It is worth noting that this limitation could be lifted in node through the use of AsyncLocalStorage, but no equivalent API is currently available in the browser so maintining support for both platforms simultaneously would introduce a great deal of complexity.
+However this limitation is intended to be lifted in Node through the use of AsyncLocalStorage. The test scheduling and state management implementation is factored to facilitate this, and the TAP reporter supports a forward-compatible TAP flavour which encodes concurrent results (i.e. interleaved subtest output) without requiring buffering.
