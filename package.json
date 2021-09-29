@@ -5,6 +5,7 @@
   "main": "ducktest",
   "type": "module",
   "scripts": {
+    "lint": "eslint . --ext .ts",
     "build": "tsc --build src",
     "test": "tsc --build test && node tmp/tests.js",
     "start": "tsc --build src && node dist/ducktest.js"
