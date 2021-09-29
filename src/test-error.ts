@@ -3,4 +3,4 @@
  * formulation of the test itself, rather than to indicate
  * test failure.
  */
-export class TestError extends Error { };
+export class TestError extends Error { }

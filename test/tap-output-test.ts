@@ -1,6 +1,6 @@
 import { strict } from 'assert';
 import { testcase, subcase, silence } from '../dist/ducktest.js';
-import { tap, Ordering, Stream, Reporter } from '../dist/tap-output.js';
+import { tap, Stream } from '../dist/tap-output.js';
 
 const assert: typeof strict = silence(strict);
 

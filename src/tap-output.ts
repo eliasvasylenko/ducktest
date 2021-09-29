@@ -4,29 +4,24 @@ export enum Ordering {
     Concurrent,
     Serial
 }
-enum Status {
-    Empty,
-    Begun,
-    Ended
-}
 
 export interface Reporter {
     beginReport(ordering?: Ordering, plan?: number): Report;
-};
+}
 export interface Report {
     beginSubsection(desc: string): Report;
     diagnostic(message: string): void;
-    fail(cause: any): void;
+    fail(cause: unknown): void;
     end(message?: string): void;
-    bailOut(cause?: any): void;
+    bailOut(cause?: unknown): void;
     success: boolean;
-};
+}
 export interface Stream {
     (line: string): void;
-};
+}
 export function tap(writeLine: Stream): Reporter {
     return { beginReport(ordering: Ordering = Ordering.Serial, plan?: number) { return new TapReport(writeLine, ordering, plan); } };
-};
+}
 
 function prepend(prefix: string, lines: string) {
     return prefix + lines.replaceAll('\n', '\n' + prefix);
@@ -60,12 +55,12 @@ class TapOutput implements Report {
         this.#checkEnded();
         this._stream(prepend('# ', message));
     }
-    fail(cause: any) {
+    fail(cause: unknown) {
         this.#checkEnded();
 
         this.#subtests++;
         this.success = false;
-        this._stream(`not ok${cause?.message ? ' - ' + cause.message : ''}`)
+        this._stream(`not ok${cause instanceof Error ? ' - ' + cause.message : ''}`)
         this._stream('  ---');
         this._stream('  ...');
     }
@@ -79,10 +74,10 @@ class TapOutput implements Report {
             this._stream(`1..${this.#subtests}`)
         this._endMessage(message);
     }
-    bailOut(cause?: any) {
+    bailOut(cause?: unknown) {
         this.#ended = true;
 
-        this._stream(`Bail out!${cause?.message ? (' ' + cause.message) : ''}`)
+        this._stream(`Bail out!${cause instanceof Error ? (' ' + cause.message) : ''}`)
     }
     _endMessage(message?: string) {
         if (message != null) {

@@ -1,14 +1,16 @@
 import { strict as assert } from 'assert';
-import { testcase, subcase, message, softFail, Suite, Stream } from '../dist/ducktest.js';
+import { testcase, subcase, Suite, Stream } from '../dist/ducktest.js';
 import { TestError } from '../dist/test-error.js';
 
+const emptySpec = () => { /*no test*/ };
+
 testcase('make a new report', async () => {
-    let output: string[] = [];
+    const output: string[] = [];
     const stream: Stream = line => output.push(line);
     const s = new Suite();
 
     subcase('run an empty test', async () => {
-        await s.testcase('empty test', () => { });
+        await s.testcase('empty test', emptySpec);
         await s.report(stream);
         assert.deepEqual(output, [
             'TAP version 13',
@@ -36,8 +38,8 @@ testcase('make a new report', async () => {
 
     subcase('run a test with multiple subtests', async () => {
         await s.testcase('passing test', () => {
-            s.subcase('subcase one', () => { });
-            s.subcase('subcase two', () => { });
+            s.subcase('subcase one', emptySpec);
+            s.subcase('subcase two', emptySpec);
         });
         await s.report(stream);
         assert.deepEqual(output, [
@@ -56,7 +58,7 @@ testcase('make a new report', async () => {
             s.subcase('failing subcase', () => {
                 s.softFail(new Error('failure'));
             });
-            s.subcase('empty subcase', () => { });
+            s.subcase('empty subcase', emptySpec);
         });
         await s.report(stream);
         assert.deepEqual(output, [
@@ -81,7 +83,7 @@ testcase('make a new report', async () => {
                 await new Promise(resolve => setTimeout(resolve, 100));
                 s.softFail(new Error('failure'));
             });
-            s.subcase('empty subcase', () => { });
+            s.subcase('empty subcase', emptySpec);
         });
         await s.report(stream);
         assert.deepEqual(output, [
@@ -106,7 +108,7 @@ testcase('make a new report', async () => {
             s.subcase('failing subcase', () => {
                 s.softFail(new Error('failure'));
             });
-            s.subcase('empty subcase', () => { });
+            s.subcase('empty subcase', emptySpec);
         });
         await s.report(stream);
         assert.deepEqual(output, [
@@ -162,7 +164,7 @@ testcase('make a new report', async () => {
             s.subcase('errored subcase', () => {
                 throw new TestError('cause');
             });
-            s.subcase('subcase', () => { });
+            s.subcase('subcase', emptySpec);
         });
         await s.report(stream);
 
@@ -181,7 +183,7 @@ testcase('make a new report', async () => {
                 await new Promise(resolve => setTimeout(resolve, 100));
                 throw new TestError('cause');
             });
-            s.subcase('subcase', () => { });
+            s.subcase('subcase', emptySpec);
         });
         await s.report(stream);
 

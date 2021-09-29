@@ -26,7 +26,7 @@ function syncAsyncChain(action: () => SyncAsync, ...actions: (() => SyncAsync)[]
         result = result?.then(action) ?? action();
     return result;
 }
-function syncAsyncCatch(tryer: () => SyncAsync, catcher: (e: any) => void) {
+function syncAsyncCatch(tryer: () => SyncAsync, catcher: (e: unknown) => void) {
     try {
         return tryer()?.catch(catcher);
     } catch (e) { catcher(e); }
@@ -52,7 +52,7 @@ function runFixture(runner: ContextRunner): Test {
 interface CaseContext {
     children: { description: string; runner: ContextRunner }[];
     promise: SyncAsync;
-};
+}
 function runCase(runner: ContextRunner, subcasesOnPath: Iterable<string> = [], subcasesEncounteredByParent: Set<string> = new Set()): Test {
     return (description, spec): SyncAsync => {
         const context: CaseContext = { children: [], promise: void null };
@@ -258,7 +258,7 @@ export const defaultReporter: Reporter = tap(console.log);
 export class Suite {
     #runner = makeSynchronousTester();
 
-    report(output?: Stream | Reporter) {
+    report(output?: Stream | Reporter): SyncAsync {
         const reporter = output
             ? ('beginReport' in output)
                 ? output as Reporter
@@ -268,24 +268,24 @@ export class Suite {
         return this.#runner.run(reporter);
     }
 
-    softFail(error: any) {
+    softFail(error: unknown): SyncAsync {
         this.#runner.report().fail(error);
     }
-    soften<T extends object>(subject: T): T {
+    soften<T>(subject: T): T {
         return softenImpl(subject, e => this.softFail(e))
     }
-    softly(action: () => SyncAsync) {
+    softly(action: () => SyncAsync): SyncAsync {
         return syncAsyncCatch(action, e => this.softFail(e));
     }
     silence = silenceImpl;
 
-    message(message: string) {
+    message(message: string): SyncAsync {
         this.#runner.report().diagnostic(message);
     }
     testcase: Test = (description, spec) => { return this.#runner.testcase(description, spec); }
     subcase: Test = (description, spec) => { return this.#runner.subcase(description, spec); }
     fixture: Test = (description, spec) => { return this.#runner.fixture(description, spec); }
-};
+}
 
 const s = new Suite();
 export default s;

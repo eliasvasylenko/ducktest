@@ -1,10 +1,10 @@
-import { testcase, subcase, report } from '../dist/ducktest.js';
-import { soften, silence } from '../dist/assertions.js';
+import { testcase, subcase } from '../dist/ducktest.js';
+import { soften } from '../dist/assertions.js';
 import { strict as assert } from 'assert';
 
 testcase('using soften', () => {
     subcase('a softened function call intercepts the error', async () => {
-        let error: any;
+        let error: unknown;
         const f = () => { throw 'error text'; };
         const soft = soften(f, e => error = e);
 
@@ -16,7 +16,7 @@ testcase('using soften', () => {
     });
 
     subcase('a softened property access intercepts the error', async () => {
-        let error: any;
+        let error: unknown;
         const o = { get p() { throw 'error text'; } };
         const soft = soften(o, e => error = e);
 
@@ -26,7 +26,7 @@ testcase('using soften', () => {
     });
 
     subcase('a softened function call softens a returned object', async () => {
-        let error: any;
+        let error: unknown;
         const f = () => () => { throw 'error text'; };
         const soft = soften(f, e => error = e);
 
@@ -36,7 +36,7 @@ testcase('using soften', () => {
     });
 
     subcase('a softened property access softens a returned object', async () => {
-        let error: any;
+        let error: unknown;
         const o = { get p() { return () => { throw 'error text'; }; } };
         const soft = soften(o, e => error = e);
 
@@ -56,7 +56,7 @@ testcase('using soften', () => {
     });
 
     subcase('a softened function call forwards the correct arguments', async () => {
-        const f = (...args: any[]) => args;
+        const f = (...args: unknown[]) => args;
         const soft = soften(f, () => assert.fail('no error should be thrown'));
 
         const r = soft(1, '2', { three: [] });
