@@ -1,8 +1,9 @@
 {
   "name": "@strangeskies/ducktest",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "A JavaScript/TypeScript testing framework",
-  "main": "ducktest",
+  "main": "dist/ducktest.js",
+  "types": "dist/ducktest.d.ts",
   "type": "module",
   "scripts": {
     "lint": "eslint . --ext .ts",
