@@ -130,7 +130,10 @@ function runSubcase(context: CaseContext, subcasesOnPath: Iterable<string>, subc
 
     let encounterSubcase = nextEncounterSubcase();
 
-    return runner => encounterSubcase(runner);
+    return runner => {
+        const r = runner;
+        return (description, spec) => encounterSubcase(r)(description, spec);
+    };
 }
 
 type Plan = ((tester: Tester) => SyncAsync)[];

@@ -37,7 +37,7 @@ testcase('make a new report', async () => {
     });
 
     subcase('run a test with multiple subtests', async () => {
-        await s.testcase('passing test', () => {
+        s.testcase('passing test', () => {
             s.subcase('subcase one', emptySpec);
             s.subcase('subcase two', emptySpec);
         });
@@ -49,6 +49,51 @@ testcase('make a new report', async () => {
             '    ok - subcase one',
             '    ok - subcase two',
             '    1..2',
+            'ok - passing test'
+        ]);
+    });
+
+    subcase('run a test with multiple nested subtests', async () => {
+        s.testcase('passing test', () => {
+            s.subcase('subcase', () => {
+                s.subcase('nested subcase one', emptySpec);
+                s.subcase('nested subcase two', emptySpec);
+            });
+        });
+        await s.report(stream);
+        assert.deepEqual(output, [
+            'TAP version 13',
+            '1..1',
+            '[passing test]',
+            '    [subcase]',
+            '        ok - nested subcase one',
+            '        ok - nested subcase two',
+            '        1..2',
+            '    ok - subcase',
+            '    1..1',
+            'ok - passing test'
+        ]);
+    });
+
+    subcase('run an asynchronous nested subtests followed by another nested subtest', async () => {
+        await s.testcase('passing test', async () => {
+            await s.subcase('subcase', async () => {
+                await s.subcase('nested subcase one', () =>
+                    new Promise(resolve => setTimeout(resolve, 100)));
+                s.subcase('nested subcase two', emptySpec);
+            });
+        });
+        await s.report(stream);
+        assert.deepEqual(output, [
+            'TAP version 13',
+            '1..1',
+            '[passing test]',
+            '    [subcase]',
+            '        ok - nested subcase one',
+            '        ok - nested subcase two',
+            '        1..2',
+            '    ok - subcase',
+            '    1..1',
             'ok - passing test'
         ]);
     });
@@ -99,6 +144,36 @@ testcase('make a new report', async () => {
             '    ok - empty subcase',
             '    1..2',
             'not ok - test'
+        ]);
+    });
+
+    subcase('run an asynchronous failing nested subtests followed by another nested subtest', async () => {
+        await s.testcase('passing test', async () => {
+            await s.subcase('subcase', async () => {
+                await s.subcase('nested subcase one', async () => {
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    s.softFail(new Error('failure'));
+                });
+                s.subcase('nested subcase two', emptySpec);
+            });
+        });
+        await s.report(stream);
+        assert.deepEqual(output, [
+            'TAP version 13',
+            '1..1',
+            '[passing test]',
+            '    [subcase]',
+            '        [nested subcase one]',
+            '            not ok - failure',
+            '              ---',
+            '              ...',
+            '            1..1',
+            '        not ok - nested subcase one',
+            '        ok - nested subcase two',
+            '        1..2',
+            '    not ok - subcase',
+            '    1..1',
+            'not ok - passing test'
         ]);
     });
 
@@ -155,6 +230,28 @@ testcase('make a new report', async () => {
             '[test]',
             '    [subcase]',
             '        # message',
+            'Bail out! cause'
+        ]);
+    });
+
+    subcase('bail out of a nested subcase after a message', async () => {
+        await s.testcase('test', () => {
+            s.subcase('subcase', () => {
+                s.subcase('nested subcase', () => {
+                    s.message('message');
+                    throw new TestError('cause');
+                });
+            });
+        });
+        await s.report(stream);
+
+        assert.deepEqual(output, [
+            'TAP version 13',
+            '1..1',
+            '[test]',
+            '    [subcase]',
+            '        [nested subcase]',
+            '            # message',
             'Bail out! cause'
         ]);
     });
