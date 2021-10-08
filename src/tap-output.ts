@@ -24,7 +24,7 @@ export function tap(writeLine: Stream): Reporter {
 }
 
 function prepend(prefix: string, lines: string) {
-    return prefix + lines.replaceAll('\n', '\n' + prefix);
+    return prefix + lines.replace(/\n/g, '\n' + prefix);
 }
 
 class TapOutput implements Report {
