@@ -2,6 +2,7 @@ import { soften as softenImpl, silence as silenceImpl } from './assertions.js';
 export { Ordering, Reporter, Report, Stream, tap } from './tap-output.js';
 import { Ordering, Reporter, Report, Stream, tap } from './tap-output.js';
 import { TestError } from './test-error.js';
+import { SyncAsync, commit } from './commitment.js';
 
 interface Context {
     testcase?: TestImpl;
@@ -16,33 +17,11 @@ interface Tester {
     run(reporter: Reporter): SyncAsync;
 }
 type Test = (description: string, spec: () => SyncAsync) => SyncAsync;
-type ContextRunner = (context: Context) => (description: string, action: (tester: Tester) => SyncAsync) => SyncAsync;
+type Action = (description: string, action: (tester: Tester) => SyncAsync) => SyncAsync;
+type ContextRunner = (context: Context) => Action;
 type TestImpl = (runner: ContextRunner) => Test;
-type SyncAsync = Promise<void> | void;
 
-function syncAsyncChain(action: () => SyncAsync, ...actions: (() => SyncAsync)[]) {
-    let result = action();
-    for (const action of actions)
-        result = result?.then(action) ?? action();
-    return result;
-}
-function syncAsyncCatch(tryer: () => SyncAsync, catcher: (e: unknown) => void) {
-    try {
-        return tryer()?.catch(catcher);
-    } catch (e) { catcher(e); }
-}
-function syncAsyncFinally(tryer: () => SyncAsync, finaller: () => void) {
-    let cont: SyncAsync;
-    try {
-        cont = tryer();
-    } catch (e) {
-        finaller();
-        throw e;
-    }
-    return cont?.finally(finaller) ?? finaller();
-}
-
-function runFixture(runner: ContextRunner): Test {
+function runFixture(runner: ContextRunner): Action {
     return runner({
         fixture: () => () => { throw new TestError('fixture should not occur during fixture'); },
         testcase: runCase
@@ -53,37 +32,37 @@ interface CaseContext {
     children: { description: string; runner: ContextRunner }[];
     promise: SyncAsync;
 }
-function runCase(runner: ContextRunner, subcasesOnPath: Iterable<string> = [], subcasesEncounteredByParent: Set<string> = new Set()): Test {
+function runCase(runner: ContextRunner, subcasesOnPath: Iterable<string> = [], subcasesEncounteredByParent: Set<string> = new Set()): Action {
     return (description, spec): SyncAsync => {
         const context: CaseContext = { children: [], promise: void null };
         const r = runner({ subcase: runSubcase(context, subcasesOnPath, subcasesEncounteredByParent) });
 
-        return r(description, tester =>
-            syncAsyncChain(
-                spec,
-                () => context.promise,
-                () => {
-                    if (!tester.report().success) {
-                        for (const child of context.children)
-                            tester.report().beginSubsection(child.description).end('SKIP enclosing case failed')
-                        return;
-                    }
+        return r(description, tester => commit()
+            .then(() => spec(tester))
+            .then(() => context.promise)
+            .then(() => {
+                if (!tester.report().success) {
+                    for (const child of context.children)
+                        tester.report().beginSubsection(child.description).end('SKIP enclosing case failed')
+                    return;
+                }
 
-                    const subcasesEncountered = new Set([
-                        ...subcasesEncounteredByParent,
-                        ...context.children.map(c => c.description)
-                    ]);
+                const subcasesEncountered = new Set([
+                    ...subcasesEncounteredByParent,
+                    ...context.children.map(c => c.description)
+                ]);
 
-                    const promises = context.children.map(child => runCase(
-                        child.runner,
-                        [...subcasesOnPath, child.description],
-                        subcasesEncountered)(
-                            child.description,
-                            spec));
+                const promises = context.children.map(child => runCase(
+                    child.runner,
+                    [...subcasesOnPath, child.description],
+                    subcasesEncountered)(
+                        child.description,
+                        spec));
 
-                    if (promises.length > 0)
-                        return Promise.all(promises).then();
-                }));
+                if (promises.length > 0)
+                    return Promise.all(promises).then(() => { /*void*/ });
+            })
+            .honour());
     }
 }
 
@@ -117,9 +96,10 @@ function runSubcase(context: CaseContext, subcasesOnPath: Iterable<string>, subc
 
                 if (nextSubcase.value === description) {
                     encounterSubcase = nextEncounterSubcase();
-                    c.promise = syncAsyncChain(
-                        () => c.promise,
-                        spec);
+                    c.promise = commit()
+                        .then(() => c.promise)
+                        .then(spec)
+                        .honour();
                     return c.promise;
                 }
 
@@ -161,9 +141,10 @@ function makeSynchronousTester(): Tester {
                 report() { return report; }
             };
 
-            return syncAsyncFinally(
-                () => action(top),
-                () => void (top = previousTop));
+            return commit()
+                .then(() => action(top))
+                .finally(() => void (top = previousTop))
+                .honour();
         };
     }
 
@@ -177,25 +158,29 @@ function makeSynchronousTester(): Tester {
                 const d = description;
                 const a = action;
 
-                return (s.promise = syncAsyncChain(
-                    () => s.promise,
-                    () => {
+                s.promise = commit()
+                    .then(() => s.promise)
+                    .then(() => {
                         const subsection = s.report.beginSubsection(d);
                         const substack: SynchronousStack = { parent: s, report: subsection, description: d, promise: void null };
 
-                        return syncAsyncChain(
-                            () => r(substack, tester =>
-                                syncAsyncCatch(
-                                    () => syncAsyncChain(
-                                        () => a(tester),
-                                        () => subsection.end()),
-                                    e => {
-                                        if (e instanceof TestError) throw e;
-                                        subsection.fail(e);
-                                        subsection.end();
-                                    })),
-                            () => substack.promise);
-                    }));
+                        return commit()
+                            .then(() => r(substack, tester =>
+                                commit()
+                                    .then(() => a(tester))
+                                    .then(() => subsection.end())
+                                    .catch(
+                                        e => {
+                                            if (e instanceof TestError) throw e;
+                                            subsection.fail(e);
+                                            subsection.end();
+                                        })
+                                    .honour()))
+                            .then(() => substack.promise)
+                            .honour();
+                    })
+                    .honour();
+                return s.promise;
             };
         };
     }
@@ -206,21 +191,19 @@ function makeSynchronousTester(): Tester {
         const r = run({ testcase: runCase, fixture: runFixture });
         const p = plan;
 
-        return syncAsyncCatch(() =>
-            syncAsyncChain(
-                () => r(stack, tester => {
-                    const r = tester;
-                    let c: SyncAsync = void null;
-                    for (const test of p) {
-                        c = syncAsyncChain(
-                            () => c,
-                            () => test(r));
-                    }
-                    return c;
-                }),
-                () => stack.promise,
-                () => report.end()),
-            e => report.bailOut(e));
+        return commit()
+            .then(() => r(stack, tester => {
+                const r = tester;
+                let c = commit();
+                for (const test of p) {
+                    c = c.then(() => test(r));
+                }
+                return c.honour();
+            }))
+            .then(() => stack.promise)
+            .then(() => report.end())
+            .catch(e => report.bailOut(e))
+            .honour();
     }
 
     top = makePlanningInterface(runPlan);
@@ -278,7 +261,10 @@ export class Suite {
         return softenImpl(subject, e => this.softFail(e))
     }
     softly(action: () => SyncAsync): SyncAsync {
-        return syncAsyncCatch(action, e => this.softFail(e));
+        return commit()
+            .then(action)
+            .catch(e => this.softFail(e))
+            .honour();
     }
     silence = silenceImpl;
 
